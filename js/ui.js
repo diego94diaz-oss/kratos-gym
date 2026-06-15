@@ -230,7 +230,7 @@ const UI = (() => {
     scales:{ x:{ ticks:{color:c.text}, grid:{color:c.grid} }, y:{ ticks:{color:c.text}, grid:{color:c.grid} } } }; }
 
   // ---------- CUERPO (peso + composición + medidas) ----------
-  function renderPeso({ weights, profile, measurements = [], onAdd, onDelete, onAddMeasure, onDeleteMeasure }) {
+  function renderPeso({ weights, profile, measurements = [], photos = [], onAdd, onDelete, onAddMeasure, onDeleteMeasure, onAddPhoto, onDeletePhoto }) {
     const wrap = el('div');
     const advice = Logic.bodyAdvice(profile, weights);
     const avg = Logic.weeklyAvg(weights);
@@ -351,6 +351,31 @@ const UI = (() => {
       setTimeout(drawSel, 40);
     }
 
+    // --- Fotos de progreso ---
+    const pCard = el('div','card');
+    pCard.innerHTML = `<div class="row between"><h3>📸 Fotos de progreso</h3>
+        <label class="btn btn-ghost" style="cursor:pointer">+ Foto<input type="file" id="ph-file" accept="image/*" capture="environment" hidden></label></div>
+      <div class="row" style="gap:8px;margin-top:8px">
+        <select id="ph-pose" class="day-sel"><option value="frente">Frente</option><option value="lado">Lado</option><option value="espalda">Espalda</option></select>
+        <input id="ph-fecha" type="date" value="${Logic.todayISO()}">
+      </div>
+      <p class="help">Privadas: se guardan en tu almacenamiento personal con acceso restringido (solo tú).</p>
+      <div class="photo-grid" id="ph-grid" style="margin-top:10px"></div>`;
+    const pgrid = pCard.querySelector('#ph-grid');
+    if(!photos.length) pgrid.innerHTML = '<div class="empty" style="grid-column:1/-1">Aún no hay fotos. Sube la primera para comparar tu progreso.</div>';
+    photos.slice().reverse().forEach(ph=>{
+      const cell = el('div','photo-cell');
+      cell.innerHTML = `<img src="${ph.url||''}" alt="${esc(ph.pose||'')}" loading="lazy">
+        <span class="pdate">${ph.fecha} · ${esc(ph.pose||'')}</span><button class="pdel">✕</button>`;
+      cell.querySelector('.pdel').onclick = () => { if(confirm('¿Eliminar foto?')) onDeletePhoto(ph.id, ph.path); };
+      pgrid.appendChild(cell);
+    });
+    pCard.querySelector('#ph-file').onchange = e => {
+      const f = e.target.files[0];
+      if(f) onAddPhoto(f, pCard.querySelector('#ph-pose').value, pCard.querySelector('#ph-fecha').value);
+    };
+    wrap.appendChild(pCard);
+
     return wrap;
   }
   let mChart;
@@ -372,31 +397,235 @@ const UI = (() => {
       data:{ labels:weights.map(w=>w.fecha.slice(5)), datasets:ds }, options:baseOpts(c) });
   }
 
+  // ---------- NUTRICIÓN ----------
+  function macroBar(label, val, target, unit='g'){
+    const pct = target ? Math.min(100, Math.round(val/target*100)) : 0;
+    const over = target && val > target*1.05;
+    return `<div class="macro"><div class="row"><span>${label}</span><b>${Math.round(val)}${target?` / ${target}`:''} ${unit}</b></div>
+      <div class="bar ${over?'over':''}"><i style="width:${pct}%"></i></div></div>`;
+  }
+
+  function renderNutricion({ logs, profile, lastWeight, date, onChangeDate, onSearch, onLog, onDeleteLog }) {
+    const wrap = el('div');
+    const t = Logic.effectiveTargets(profile, lastWeight);
+    const dayLogs = logs.filter(l => l.fecha === date);
+    const sum = Logic.sumFoods(dayLogs);
+
+    // --- Resumen del día ---
+    const sumCard = el('div','card');
+    const kcalPct = t.kcal ? Math.min(100, Math.round(sum.kcal/t.kcal*100)) : 0;
+    const rest = t.kcal ? Math.round(t.kcal - sum.kcal) : null;
+    sumCard.innerHTML = `<div class="row between">
+        <div class="section-title" style="margin:0">Resumen nutricional</div>
+        <input id="n-fecha" type="date" value="${date}" class="day-sel" style="padding:6px 8px">
+      </div>
+      <div class="kcal-ring"><div class="big">${Math.round(sum.kcal)}</div>
+        <div class="label">${t.kcal?`de ${t.kcal} kcal · ${rest>=0?`quedan ${rest}`:`+${-rest} pasado`}`:'kcal (sin objetivo)'}</div></div>
+      <div class="bar ${t.kcal&&sum.kcal>t.kcal*1.05?'over':''}" style="margin:6px 0 14px"><i style="width:${kcalPct}%"></i></div>
+      ${macroBar('Proteína', sum.prot, t.prot)}
+      ${macroBar('Grasa', sum.grasa, t.grasa)}
+      ${macroBar('Carbohidratos', sum.carbo, t.carbo)}
+      ${!t.kcal?'<p class="help">Completa edad, sexo y actividad en Ajustes para calcular tus objetivos.</p>':''}`;
+    sumCard.querySelector('#n-fecha').onchange = e => onChangeDate(e.target.value);
+    wrap.appendChild(sumCard);
+
+    // --- Agregar alimento ---
+    const addCard = el('div','card');
+    addCard.innerHTML = `<h3>Agregar alimento</h3>
+      <div class="row" style="gap:8px">
+        <input id="n-q" placeholder="Buscar (ej: avena, pollo, yogur...)" style="flex:1">
+        <button class="btn btn-primary" id="n-search">🔍</button>
+      </div>
+      <div class="row" style="gap:8px;margin-top:8px">
+        <button class="btn btn-ghost" id="n-manual" style="flex:1">✏️ Entrada manual</button>
+      </div>
+      <div id="n-results" style="margin-top:8px"></div>`;
+    const resBox = addCard.querySelector('#n-results');
+    const mealOptions = Logic.MEALS.map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
+
+    // Formulario de porción para un alimento elegido
+    function portionForm(food){
+      resBox.innerHTML = '';
+      const def = food.porcion_g || 100;
+      const card = el('div','card'); card.style.marginBottom='0';
+      card.innerHTML = `<div class="ex-name">${esc(food.nombre)}</div>
+        ${food.marca?`<div class="ex-meta">${esc(food.marca)}</div>`:''}
+        <div class="ex-meta">por 100 g: ${food.kcal_100??'—'} kcal · P${food.prot_100??'—'} G${food.grasa_100??'—'} C${food.carbo_100??'—'}</div>
+        <div class="row" style="gap:8px;margin-top:10px">
+          <div style="flex:1"><label class="help">Gramos</label><input id="pf-g" type="number" inputmode="decimal" value="${def}"></div>
+          <div style="flex:1"><label class="help">Comida</label><select id="pf-meal" class="day-sel" style="width:100%">${mealOptions}</select></div>
+        </div>
+        <div class="rec" id="pf-prev"></div>
+        <div class="row" style="gap:8px;margin-top:6px">
+          <button class="btn btn-primary" id="pf-add" style="flex:1">Agregar</button>
+          <button class="btn btn-ghost" id="pf-back">← Volver</button>
+        </div>`;
+      const gIn = card.querySelector('#pf-g'), prev = card.querySelector('#pf-prev');
+      const upd = () => { const m=Logic.macrosFor(food, Number(gIn.value)||0);
+        prev.innerHTML = `<b>${m.kcal??'—'}</b> kcal · P ${m.prot??'—'} · G ${m.grasa??'—'} · C ${m.carbo??'—'}`; };
+      gIn.oninput = upd; upd();
+      card.querySelector('#pf-back').onclick = () => { resBox.innerHTML=''; };
+      card.querySelector('#pf-add').onclick = () => {
+        const g = Number(gIn.value)||0; if(!g) return toast('Ingresa los gramos');
+        const m = Logic.macrosFor(food, g);
+        onLog({ fecha:date, comida:card.querySelector('#pf-meal').value, nombre:food.nombre,
+          gramos:g, kcal:m.kcal, prot:m.prot, grasa:m.grasa, carbo:m.carbo });
+      };
+      resBox.appendChild(card);
+    }
+
+    function showResults(list){
+      resBox.innerHTML = '';
+      if(!list.length){ resBox.appendChild(el('div','empty','Sin resultados. Prueba otro término o usa entrada manual.')); return; }
+      list.forEach(f=>{
+        const r = el('div','food-res');
+        r.innerHTML = `<div><div style="font-weight:600">${esc(f.nombre)}</div>
+          <div class="ex-meta">${esc(f.marca||'')}${f.marca?' · ':''}${f.kcal_100??'—'} kcal/100g</div></div>
+          <span class="pill a">+</span>`;
+        r.onclick = () => portionForm(f);
+        resBox.appendChild(r);
+      });
+    }
+
+    // Recientes (reconstruidos desde el historial)
+    const recents = []; const seen = new Set();
+    logs.forEach(l => { if(l.nombre && !seen.has(l.nombre) && l.gramos>0){ seen.add(l.nombre);
+      const f=100/l.gramos;
+      recents.push({ nombre:l.nombre, marca:'', kcal_100:l.kcal!=null?+(l.kcal*f).toFixed(1):null,
+        prot_100:l.prot!=null?+(l.prot*f).toFixed(1):null, grasa_100:l.grasa!=null?+(l.grasa*f).toFixed(1):null,
+        carbo_100:l.carbo!=null?+(l.carbo*f).toFixed(1):null, porcion_g:Number(l.gramos), fuente:'reciente' }); } });
+
+    addCard.querySelector('#n-search').onclick = async () => {
+      const q = addCard.querySelector('#n-q').value.trim();
+      if(!q) return;
+      resBox.innerHTML = '<div class="empty">Buscando...</div>';
+      try { showResults(await onSearch(q)); }
+      catch { resBox.innerHTML = '<div class="empty">Error de conexión. Intenta de nuevo o usa entrada manual.</div>'; }
+    };
+    addCard.querySelector('#n-q').addEventListener('keydown', e=>{ if(e.key==='Enter') addCard.querySelector('#n-search').click(); });
+    addCard.querySelector('#n-manual').onclick = () => {
+      resBox.innerHTML = '';
+      const c = el('div','card'); c.style.marginBottom='0';
+      c.innerHTML = `<label class="help">Nombre</label><input id="mn-nom" placeholder="Ej: Arroz cocido">
+        <div class="grid2" style="margin-top:8px">
+          <div><label class="help">Gramos</label><input id="mn-g" type="number" value="100"></div>
+          <div><label class="help">Comida</label><select id="mn-meal" class="day-sel" style="width:100%">${mealOptions}</select></div>
+        </div>
+        <div class="grid2" style="margin-top:8px">
+          <div><label class="help">Kcal (en esa porción)</label><input id="mn-kcal" type="number"></div>
+          <div><label class="help">Proteína (g)</label><input id="mn-p" type="number" step="0.1"></div>
+        </div>
+        <div class="grid2" style="margin-top:8px">
+          <div><label class="help">Grasa (g)</label><input id="mn-gr" type="number" step="0.1"></div>
+          <div><label class="help">Carbos (g)</label><input id="mn-c" type="number" step="0.1"></div>
+        </div>
+        <button class="btn btn-primary" id="mn-add" style="width:100%;margin-top:12px">Agregar</button>`;
+      c.querySelector('#mn-add').onclick = () => {
+        const nombre=c.querySelector('#mn-nom').value.trim(); if(!nombre) return toast('Pon un nombre');
+        onLog({ fecha:date, comida:c.querySelector('#mn-meal').value, nombre,
+          gramos:Number(c.querySelector('#mn-g').value)||0,
+          kcal:Number(c.querySelector('#mn-kcal').value)||0, prot:Number(c.querySelector('#mn-p').value)||0,
+          grasa:Number(c.querySelector('#mn-gr').value)||0, carbo:Number(c.querySelector('#mn-c').value)||0 });
+      };
+      resBox.appendChild(c);
+    };
+    wrap.appendChild(addCard);
+
+    if(recents.length){
+      const recCard = el('div','card');
+      recCard.innerHTML = '<h3>Recientes</h3>';
+      recents.slice(0,8).forEach(f=>{
+        const r=el('div','food-res');
+        r.innerHTML=`<div><div style="font-weight:600">${esc(f.nombre)}</div><div class="ex-meta">${f.kcal_100??'—'} kcal/100g</div></div><span class="pill a">+</span>`;
+        r.onclick=()=>{ resBox.scrollIntoView({behavior:'smooth'}); portionForm(f); };
+        recCard.appendChild(r);
+      });
+      wrap.appendChild(recCard);
+    }
+
+    // --- Registro del día por comida ---
+    const logCard = el('div','card');
+    logCard.innerHTML = `<h3>Hoy comiste</h3>`;
+    if(!dayLogs.length){ logCard.appendChild(el('div','empty','Aún no registras comidas este día.')); }
+    else {
+      Logic.MEALS.forEach(([mk,ml])=>{
+        const items = dayLogs.filter(l=>l.comida===mk);
+        if(!items.length) return;
+        const g=el('div','meal-group'); g.innerHTML=`<h4>${ml}</h4>`;
+        items.forEach(l=>{
+          const it=el('div','list-item');
+          it.innerHTML=`<div><div style="font-weight:600">${esc(l.nombre||'')}</div>
+            <div class="ex-meta">${l.gramos} g · ${Math.round(l.kcal||0)} kcal · P${l.prot??'—'} G${l.grasa??'—'} C${l.carbo??'—'}</div></div>
+            <button class="icon-btn dl">🗑️</button>`;
+          it.querySelector('.dl').onclick=()=>{ if(confirm('¿Eliminar registro?')) onDeleteLog(l.id); };
+          g.appendChild(it);
+        });
+        logCard.appendChild(g);
+      });
+    }
+    wrap.appendChild(logCard);
+    return wrap;
+  }
+
   // ---------- AJUSTES ----------
-  function renderAjustes({ profile, email, onSaveProfile, onExport, onImport, onSignOut }) {
+  function renderAjustes({ profile, email, lastWeight, onSaveProfile, onExport, onImport, onSignOut }) {
     const wrap = el('div');
     const p = profile || {};
     const card = el('div','card');
     card.innerHTML = `<h3>Perfil</h3>
-      <div class="grid2">
+      <div class="grid3">
         <div><label class="help">Edad</label><input id="p-edad" type="number" value="${p.edad??''}"></div>
         <div><label class="help">Estatura (cm)</label><input id="p-est" type="number" value="${p.estatura_cm??''}"></div>
+        <div><label class="help">Sexo</label><select id="p-sexo" class="day-sel" style="width:100%">
+          <option value="h" ${(p.sexo||'h')==='h'?'selected':''}>Hombre</option>
+          <option value="m" ${p.sexo==='m'?'selected':''}>Mujer</option></select></div>
       </div>
-      <label class="help">Objetivo</label>
+      <label class="help" style="margin-top:8px">Nivel de actividad</label>
+      <select id="p-act" style="width:100%">${Logic.ACTIVITY.map(([v,l])=>`<option value="${v}" ${Number(p.actividad||1.45)===v?'selected':''}>${l}</option>`).join('')}</select>
+      <label class="help" style="margin-top:8px">Objetivo</label>
       <select id="p-obj">${[['recomposicion','Recomposición'],['ganar','Ganar músculo'],['perder','Perder grasa'],['mantener','Mantener'],['fuerza','Fuerza']].map(([v,t])=>`<option value="${v}" ${p.objetivo===v?'selected':''}>${t}</option>`).join('')}</select>
-      <div class="grid3" style="margin-top:8px">
+      <div class="grid2" style="margin-top:8px">
         <div><label class="help">Meta peso (kg)</label><input id="p-meta" type="number" step="0.1" value="${p.peso_objetivo_kg??''}"></div>
+        <div><label class="help">% graso conocido</label><input id="p-bf" type="number" step="0.1" value="${p.grasa_pct??''}"></div>
+      </div>
+      <div class="row between" style="margin-top:14px"><div class="section-title" style="margin:0">Objetivos nutricionales</div>
+        <button class="btn-link" id="p-calc">⚡ Calcular auto</button></div>
+      <div id="p-tdee" class="help"></div>
+      <div class="grid2" style="margin-top:6px">
         <div><label class="help">Kcal objetivo</label><input id="p-kcal" type="number" value="${p.kcal_objetivo??''}"></div>
         <div><label class="help">Proteína (g)</label><input id="p-prot" type="number" value="${p.proteina_g??''}"></div>
       </div>
+      <div class="grid2" style="margin-top:8px">
+        <div><label class="help">Grasa (g)</label><input id="p-grasa" type="number" value="${p.grasa_g??''}"></div>
+        <div><label class="help">Carbos (g)</label><input id="p-carbo" type="number" value="${p.carbo_g??''}"></div>
+      </div>
       <button class="btn btn-primary" id="p-save" style="width:100%;margin-top:12px">Guardar perfil</button>`;
-    card.querySelector('#p-save').onclick = () => onSaveProfile({
+
+    const readProfile = () => ({
       edad:Number(card.querySelector('#p-edad').value)||null,
       estatura_cm:Number(card.querySelector('#p-est').value)||null,
+      sexo:card.querySelector('#p-sexo').value,
+      actividad:Number(card.querySelector('#p-act').value)||1.45,
       objetivo:card.querySelector('#p-obj').value,
       peso_objetivo_kg:Number(card.querySelector('#p-meta').value)||null,
+      grasa_pct:Number(card.querySelector('#p-bf').value)||null,
+    });
+    card.querySelector('#p-calc').onclick = () => {
+      const draft = { ...p, ...readProfile() };
+      const tg = Logic.nutritionTargets(draft, lastWeight);
+      if(!tg){ toast('Completa edad, estatura y peso'); return; }
+      card.querySelector('#p-kcal').value = tg.kcal;
+      card.querySelector('#p-prot').value = tg.prot;
+      card.querySelector('#p-grasa').value = tg.grasa;
+      card.querySelector('#p-carbo').value = tg.carbo;
+      card.querySelector('#p-tdee').innerHTML = `BMR ~${tg.bmr} · mantenimiento ~${tg.maint} kcal → objetivo ${tg.kcal} kcal`;
+    };
+    card.querySelector('#p-save').onclick = () => onSaveProfile({
+      ...readProfile(),
       kcal_objetivo:Number(card.querySelector('#p-kcal').value)||null,
       proteina_g:Number(card.querySelector('#p-prot').value)||null,
+      grasa_g:Number(card.querySelector('#p-grasa').value)||null,
+      carbo_g:Number(card.querySelector('#p-carbo').value)||null,
     });
     wrap.appendChild(card);
 
@@ -424,5 +653,5 @@ const UI = (() => {
   }
 
   return { $, el, esc, toast, setMain, renderHoy, renderRutina, exerciseForm,
-           renderAvances, renderPeso, renderAjustes };
+           renderAvances, renderPeso, renderNutricion, renderAjustes };
 })();

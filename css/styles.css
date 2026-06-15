@@ -189,3 +189,23 @@ canvas { max-width: 100%; }
 }
 select.day-sel { width: auto; padding: 9px 12px; }
 .help { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+/* ===== Barras de macros (nutrición) ===== */
+.macro { margin: 10px 0; }
+.macro .row { justify-content: space-between; font-size: 13px; margin-bottom: 5px; }
+.macro .row b { font-weight: 700; }
+.bar { height: 9px; border-radius: 999px; background: var(--card-2); overflow: hidden; }
+.bar > i { display: block; height: 100%; border-radius: 999px; background: var(--grad); transition: width .3s ease; }
+.bar.over > i { background: linear-gradient(135deg, var(--warn), var(--danger)); }
+.kcal-ring { text-align: center; padding: 6px 0 2px; }
+.kcal-ring .big { font-size: 2.4rem; }
+.food-res { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+.food-res:last-child { border-bottom: none; }
+.food-res:active { opacity: .6; }
+.meal-group { margin-top: 6px; }
+.meal-group h4 { margin: 12px 0 4px; font-size: .9rem; color: var(--muted); text-transform: capitalize; }
+.photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.photo-grid img { width: 100%; aspect-ratio: 3/4; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); }
+.photo-cell { position: relative; }
+.photo-cell .pdate { position: absolute; bottom: 4px; left: 4px; font-size: 10px; background: rgba(0,0,0,.6); color: #fff; padding: 2px 6px; border-radius: 6px; }
+.photo-cell .pdel { position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,.6); border: none; color: #fff; border-radius: 6px; cursor: pointer; font-size: 12px; padding: 2px 6px; }

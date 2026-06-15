@@ -190,7 +190,74 @@ const Logic = (() => {
     return { grasa, magra: +(pesoKg - grasa).toFixed(1) };
   }
 
+  // ---- Nutrición ----
+  const MEALS = [['desayuno','Desayuno'],['almuerzo','Almuerzo'],['cena','Cena'],['snack','Snack']];
+  const ACTIVITY = [
+    [1.2,  'Sedentario (sin ejercicio)'],
+    [1.375,'Ligero (1-3 días/sem)'],
+    [1.45, 'Moderado-bajo (3 días/sem)'],
+    [1.55, 'Moderado (3-5 días/sem)'],
+    [1.725,'Alto (6-7 días/sem)'],
+  ];
+
+  // BMR — Mifflin-St Jeor
+  function bmrMifflin({ sexo='h', peso, estatura_cm, edad }) {
+    if (!peso || !estatura_cm || !edad) return null;
+    const base = 10*peso + 6.25*estatura_cm - 5*edad;
+    return Math.round(base + (sexo === 'm' ? -161 : 5));
+  }
+
+  // Objetivos calóricos y de macros calculados desde el perfil
+  function nutritionTargets(profile, pesoActual) {
+    const peso = pesoActual || profile?.peso_objetivo_kg;
+    const bmr = bmrMifflin({ sexo: profile?.sexo || 'h', peso,
+      estatura_cm: profile?.estatura_cm, edad: profile?.edad });
+    if (!bmr || !peso) return null;
+    const maint = Math.round(bmr * (profile?.actividad || 1.45));
+    const obj = profile?.objetivo || 'recomposicion';
+    const factor = { ganar:1.10, perder:0.80, recomposicion:1.02, fuerza:1.05, mantener:1.0 }[obj] ?? 1.0;
+    const kcal = Math.round(maint * factor);
+    const prot = Math.round(peso * 2.0);          // 2.0 g/kg
+    const grasa = Math.round(peso * 0.9);         // 0.9 g/kg
+    const carbo = Math.max(0, Math.round((kcal - prot*4 - grasa*9) / 4));
+    return { kcal, prot, grasa, carbo, maint, bmr };
+  }
+
+  // Objetivos efectivos: manuales del perfil si existen, si no los calculados
+  function effectiveTargets(profile, pesoActual) {
+    const calc = nutritionTargets(profile, pesoActual);
+    return {
+      kcal:  profile?.kcal_objetivo || calc?.kcal || null,
+      prot:  profile?.proteina_g    || calc?.prot || null,
+      grasa: profile?.grasa_g       || calc?.grasa || null,
+      carbo: profile?.carbo_g       || calc?.carbo || null,
+      calc,
+    };
+  }
+
+  // Macros de una porción a partir de valores por 100 g
+  function macrosFor(food, gramos) {
+    const f = gramos / 100;
+    return {
+      kcal:  food.kcal_100  != null ? +(food.kcal_100  * f).toFixed(0) : null,
+      prot:  food.prot_100  != null ? +(food.prot_100  * f).toFixed(1) : null,
+      grasa: food.grasa_100 != null ? +(food.grasa_100 * f).toFixed(1) : null,
+      carbo: food.carbo_100 != null ? +(food.carbo_100 * f).toFixed(1) : null,
+    };
+  }
+
+  // Suma de un conjunto de registros alimentarios
+  function sumFoods(logs) {
+    return logs.reduce((a,l)=>({
+      kcal:  a.kcal  + (+l.kcal  || 0),
+      prot:  a.prot  + (+l.prot  || 0),
+      grasa: a.grasa + (+l.grasa || 0),
+      carbo: a.carbo + (+l.carbo || 0),
+    }), { kcal:0, prot:0, grasa:0, carbo:0 });
+  }
+
   return { todayISO, nextDay, lastSessionOf, recommend, prsByExercise, newPRs,
            volumeByDate, weeklyAvg, weeklyTrend, bodyAdvice,
-           MEASURE_DEFS, latestMeasures, measureSeries, bodyFatNavy, composition };
+           MEASURE_DEFS, latestMeasures, measureSeries, bodyFatNavy, composition,
+           MEALS, ACTIVITY, bmrMifflin, nutritionTargets, effectiveTargets, macrosFor, sumFoods };
 })();

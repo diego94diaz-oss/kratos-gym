@@ -125,6 +125,78 @@ const DB = (() => {
     await sb.from('measurements').delete().eq('id', id).eq('user_id', uid());
   }
 
+  // ---- Nutrición: búsqueda Open Food Facts (red, sin auth) ----
+  async function searchFoods(term) {
+    const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(term)}`
+      + `&search_simple=1&action=process&json=1&page_size=24`
+      + `&fields=product_name,brands,code,nutriments,serving_quantity`;
+    const r = await fetch(url);
+    const j = await r.json();
+    return (j.products || []).map(p => ({
+      nombre: (p.product_name || '').trim() || '(sin nombre)',
+      marca: (p.brands || '').split(',')[0] || '',
+      barcode: p.code || '',
+      kcal_100: p.nutriments?.['energy-kcal_100g'] ?? null,
+      prot_100: p.nutriments?.proteins_100g ?? null,
+      grasa_100: p.nutriments?.fat_100g ?? null,
+      carbo_100: p.nutriments?.carbohydrates_100g ?? null,
+      fibra_100: p.nutriments?.fiber_100g ?? null,
+      porcion_g: p.serving_quantity ? Number(p.serving_quantity) : null,
+      fuente: 'off',
+    })).filter(p => p.kcal_100 != null && p.nombre !== '(sin nombre)');
+  }
+  async function searchFoodByBarcode(code) {
+    const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,brands,code,nutriments,serving_quantity`);
+    const j = await r.json();
+    if (j.status !== 1 || !j.product) return null;
+    const p = j.product;
+    return { nombre:(p.product_name||'').trim()||'(sin nombre)', marca:(p.brands||'').split(',')[0]||'',
+      barcode:p.code||code, kcal_100:p.nutriments?.['energy-kcal_100g']??null,
+      prot_100:p.nutriments?.proteins_100g??null, grasa_100:p.nutriments?.fat_100g??null,
+      carbo_100:p.nutriments?.carbohydrates_100g??null, fibra_100:p.nutriments?.fiber_100g??null,
+      porcion_g:p.serving_quantity?Number(p.serving_quantity):null, fuente:'off' };
+  }
+
+  // ---- Food logs ----
+  async function addFoodLog(l) {
+    l.user_id = uid();
+    const { error } = await sb.from('food_logs').insert(l);
+    if (error) throw error;
+  }
+  async function getFoodLogs() {
+    const { data } = await sb.from('food_logs').select('*')
+      .eq('user_id', uid()).order('fecha', { ascending:false }).order('created_at');
+    return data || [];
+  }
+  async function deleteFoodLog(id) {
+    await sb.from('food_logs').delete().eq('id', id).eq('user_id', uid());
+  }
+
+  // ---- Fotos de progreso (Storage privado + metadatos) ----
+  const BUCKET = 'progress-photos';
+  async function uploadPhoto(file, pose, fecha) {
+    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g,'') || 'jpg';
+    const path = `${uid()}/${fecha}_${pose}_${Date.now()}.${ext}`;
+    const up = await sb.storage.from(BUCKET).upload(path, file, { upsert:false, contentType:file.type || 'image/jpeg' });
+    if (up.error) throw up.error;
+    const { error } = await sb.from('progress_photos').insert({ user_id:uid(), fecha, pose, path });
+    if (error) throw error;
+  }
+  async function getPhotos() {
+    const { data } = await sb.from('progress_photos').select('*')
+      .eq('user_id', uid()).order('fecha');
+    const rows = data || [];
+    await Promise.all(rows.map(async r => {
+      const { data:s } = await sb.storage.from(BUCKET).createSignedUrl(r.path, 3600);
+      r.url = s?.signedUrl || null;
+    }));
+    return rows;
+  }
+  async function deletePhoto(id, path) {
+    await sb.storage.from(BUCKET).remove([path]);
+    await sb.from('progress_photos').delete().eq('id', id).eq('user_id', uid());
+  }
+
   return {
     configured, init, currentUser, signIn, signUp, signOut, onAuth, uid,
     getProfile, saveProfile,
@@ -132,5 +204,7 @@ const DB = (() => {
     addSets, getSets, getAllSets, deleteSetsByDate,
     addWeight, getWeights, deleteWeight,
     addMeasurement, getMeasurements, deleteMeasurement,
+    searchFoods, searchFoodByBarcode, addFoodLog, getFoodLogs, deleteFoodLog,
+    uploadPhoto, getPhotos, deletePhoto,
   };
 })();

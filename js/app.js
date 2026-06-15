@@ -3,9 +3,11 @@
 // ============================================================
 (() => {
   const $ = UI.$;
-  let cache = { exercises:[], sets:[], weights:[], measurements:[], profile:null };
+  let cache = { exercises:[], sets:[], weights:[], measurements:[], foodLogs:[], photos:[], profile:null };
   let currentTab = 'hoy';
   let pickedDay = null;
+  let nutriDate = null;
+  const lastWeightKg = () => cache.weights.length ? Number(cache.weights[cache.weights.length-1].peso_kg) : null;
 
   // ---------- Tema ----------
   function applyTheme(t){ document.documentElement.setAttribute('data-theme', t);
@@ -24,6 +26,9 @@
     cache.sets     = await DB.getAllSets();
     cache.weights  = await DB.getWeights();
     cache.measurements = await DB.getMeasurements();
+    // Tablas de Fase 1 (nutrición/fotos): pueden no existir aún si no se corrió la migración.
+    try { cache.foodLogs = await DB.getFoodLogs(); } catch { cache.foodLogs = []; }
+    try { cache.photos   = await DB.getPhotos();   } catch { cache.photos = []; }
   }
 
   async function ensureSeed(){
@@ -59,13 +64,22 @@
     } else if (currentTab==='avances') {
       UI.setMain(UI.renderAvances({ sets:cache.sets, exercises:cache.exercises }));
     } else if (currentTab==='peso') {
-      UI.setMain(UI.renderPeso({ weights:cache.weights, profile:cache.profile, measurements:cache.measurements,
+      UI.setMain(UI.renderPeso({ weights:cache.weights, profile:cache.profile, measurements:cache.measurements, photos:cache.photos,
         onAdd: async w => { await DB.addWeight(w); cache.weights=await DB.getWeights(); render(); UI.toast('Peso guardado'); },
         onDelete: async id => { await DB.deleteWeight(id); cache.weights=await DB.getWeights(); render(); },
         onAddMeasure: async m => { await DB.addMeasurement(m); cache.measurements=await DB.getMeasurements(); render(); UI.toast('Medida guardada'); },
-        onDeleteMeasure: async id => { await DB.deleteMeasurement(id); cache.measurements=await DB.getMeasurements(); render(); } }));
+        onDeleteMeasure: async id => { await DB.deleteMeasurement(id); cache.measurements=await DB.getMeasurements(); render(); },
+        onAddPhoto: async (f, pose, fecha) => { try { UI.toast('Subiendo foto...'); await DB.uploadPhoto(f, pose, fecha); cache.photos=await DB.getPhotos(); render(); UI.toast('Foto guardada'); } catch(e){ UI.toast('Error al subir: '+(e.message||'')); } },
+        onDeletePhoto: async (id, path) => { await DB.deletePhoto(id, path); cache.photos=await DB.getPhotos(); render(); } }));
+    } else if (currentTab==='nutricion') {
+      nutriDate = nutriDate || Logic.todayISO();
+      UI.setMain(UI.renderNutricion({ logs:cache.foodLogs, profile:cache.profile, lastWeight:lastWeightKg(), date:nutriDate,
+        onChangeDate: d => { nutriDate=d; render(); },
+        onSearch: term => DB.searchFoods(term),
+        onLog: async l => { await DB.addFoodLog(l); cache.foodLogs=await DB.getFoodLogs(); render(); UI.toast('Registrado'); },
+        onDeleteLog: async id => { await DB.deleteFoodLog(id); cache.foodLogs=await DB.getFoodLogs(); render(); } }));
     } else if (currentTab==='ajustes') {
-      UI.setMain(UI.renderAjustes({ profile:cache.profile, email:(DB.currentUserEmail||''),
+      UI.setMain(UI.renderAjustes({ profile:cache.profile, email:(DB.currentUserEmail||''), lastWeight:lastWeightKg(),
         onSaveProfile: async p => { await DB.saveProfile({...cache.profile, ...p}); cache.profile=await DB.getProfile(); UI.toast('Perfil guardado'); render(); },
         onExport: exportCSV, onImport: importCSV,
         onSignOut: async () => { await DB.signOut(); location.reload(); } }));
