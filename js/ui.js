@@ -156,7 +156,7 @@ const UI = (() => {
   }
 
   // ---------- DASHBOARD (Hoy) ----------
-  function renderDashboard({ profile, exercises, sets, weights, measurements, foodLogs, lastWeight, day, onTrain, onGo }) {
+  function renderDashboard({ profile, exercises, sets, weights, measurements, foodLogs, lastWeight, day, sleep = [], wellness = [], injuries = [], onTrain, onGo }) {
     const wrap = el('div');
     const today = Logic.todayISO();
 
@@ -169,7 +169,7 @@ const UI = (() => {
     wrap.appendChild(head);
 
     // --- Avisos (motor de alertas) ---
-    const alerts = Logic.buildAlerts({ sets, weights, foodLogs, profile, lastWeight });
+    const alerts = Logic.buildAlerts({ sets, weights, foodLogs, profile, lastWeight, sleep, wellness, injuries });
     if (alerts.length) {
       const aCard = el('div','card');
       aCard.style.borderLeft = '3px solid var(--warn)';
@@ -771,6 +771,153 @@ const UI = (() => {
     return wrap;
   }
 
+  // ---------- SALUD (sueño, estado, hábitos, lesiones, objetivos) ----------
+  function rating(id, val){ return `<select id="${id}" class="day-sel" style="width:100%">
+    <option value="">—</option>${[1,2,3,4,5].map(n=>`<option value="${n}" ${Number(val)===n?'selected':''}>${n}</option>`).join('')}</select>`; }
+
+  function renderSalud(p){
+    const { sleep, wellness, habits, habitLogs, injuries, goals, ctx,
+      onSleep, onWellness, onAddHabit, onDeleteHabit, onToggleHabit,
+      onAddInjury, onUpdateInjury, onDeleteInjury, onAddGoal, onDeleteGoal } = p;
+    const wrap = el('div');
+    const today = Logic.todayISO();
+    const sToday = sleep.find(x=>x.fecha===today) || {};
+    const wToday = wellness.find(x=>x.fecha===today) || {};
+
+    // Readiness
+    const rd = Logic.readiness(sToday, wToday);
+    if (rd != null){
+      const rc = el('div','card'); rc.style.borderLeft='3px solid var(--primary)';
+      const lbl = rd>=75?'Listo para entrenar fuerte':rd>=50?'Estado moderado':'Prioriza recuperación';
+      rc.innerHTML = `<div class="row between"><div><div class="section-title" style="margin:0">Readiness de hoy</div>
+        <div class="ex-meta">${lbl}</div></div><div class="big">${rd}</div></div>`;
+      wrap.appendChild(rc);
+    }
+
+    // --- Objetivos ---
+    const gCard = el('div','card');
+    gCard.innerHTML = `<div class="row between"><h3 style="margin:0">🎯 Objetivos</h3></div>`;
+    const active = goals.filter(g=>g.estado==='activo');
+    if (!active.length) gCard.appendChild(el('div','empty','Sin objetivos activos. Crea uno abajo.'));
+    active.forEach(g=>{
+      const cur = Logic.goalCurrentValue(g, ctx);
+      const pct = Logic.goalProgress(g, cur);
+      const dleft = g.fecha_objetivo ? Math.ceil((new Date(g.fecha_objetivo)-Date.now())/86400000) : null;
+      const it = el('div'); it.style.margin='10px 0';
+      it.innerHTML = `<div class="row between"><b>${esc(g.titulo)}</b>
+        <button class="icon-btn dl" title="Eliminar">🗑️</button></div>
+        <div class="ex-meta">${cur!=null?`Actual ${cur}${g.unidad||''} → `:''}meta ${g.valor_objetivo}${g.unidad||''}${dleft!=null?` · ${dleft>0?dleft+' días':'vencido'}`:''}</div>
+        ${pct!=null?`<div class="bar" style="margin-top:6px"><i style="width:${pct}%"></i></div>`:'<p class="help">Sin datos para calcular progreso aún.</p>'}`;
+      it.querySelector('.dl').onclick = () => { if(confirm('¿Eliminar objetivo?')) onDeleteGoal(g.id); };
+      gCard.appendChild(it);
+    });
+    // form
+    const gf = el('div'); gf.style.marginTop='10px';
+    gf.innerHTML = `<div class="divider"></div>
+      <label class="help">Nuevo objetivo</label>
+      <input id="g-tit" placeholder="Ej: Bajar a 64 kg / Press banca 70 kg">
+      <div class="grid3" style="margin-top:8px">
+        <div><label class="help">Tipo</label><select id="g-tipo" class="day-sel" style="width:100%">
+          <option value="peso">Peso</option><option value="medida">Medida</option><option value="fuerza">Fuerza (e1RM)</option><option value="libre">Libre</option></select></div>
+        <div><label class="help">Inicial</label><input id="g-ini" type="number" step="0.1"></div>
+        <div><label class="help">Meta</label><input id="g-obj" type="number" step="0.1"></div>
+      </div>
+      <div class="grid3" style="margin-top:8px">
+        <div><label class="help">Unidad</label><input id="g-uni" placeholder="kg / cm"></div>
+        <div style="grid-column:span 2"><label class="help">Referencia (medida/ejercicio)</label><input id="g-ref" placeholder="cintura / Press banca con barra"></div>
+      </div>
+      <label class="help" style="margin-top:8px">Fecha objetivo</label><input id="g-fecha" type="date">
+      <button class="btn btn-primary" id="g-add" style="width:100%;margin-top:10px">Crear objetivo</button>`;
+    gf.querySelector('#g-add').onclick = () => {
+      const titulo = gf.querySelector('#g-tit').value.trim(); if(!titulo) return toast('Pon un título');
+      onAddGoal({ titulo, tipo:gf.querySelector('#g-tipo').value, referencia:gf.querySelector('#g-ref').value.trim()||null,
+        valor_inicial:Number(gf.querySelector('#g-ini').value)||null, valor_objetivo:Number(gf.querySelector('#g-obj').value)||null,
+        unidad:gf.querySelector('#g-uni').value.trim()||null, fecha_objetivo:gf.querySelector('#g-fecha').value||null, estado:'activo' });
+    };
+    gCard.appendChild(gf);
+    wrap.appendChild(gCard);
+
+    // --- Sueño ---
+    const slCard = el('div','card');
+    slCard.innerHTML = `<h3>😴 Sueño de hoy</h3>
+      <div class="row" style="gap:8px">
+        <div style="flex:1"><label class="help">Horas</label><input id="sl-h" type="number" step="0.5" value="${sToday.horas??''}"></div>
+        <div style="flex:1"><label class="help">Calidad (1-5)</label>${rating('sl-q', sToday.calidad)}</div>
+        <div style="align-self:flex-end"><button class="btn btn-primary" id="sl-save">Guardar</button></div>
+      </div>`;
+    slCard.querySelector('#sl-save').onclick = () => onSleep({ fecha:today,
+      horas:Number(slCard.querySelector('#sl-h').value)||null, calidad:Number(slCard.querySelector('#sl-q').value)||null });
+    wrap.appendChild(slCard);
+
+    // --- Estado (ánimo/estrés/energía) ---
+    const wlCard = el('div','card');
+    wlCard.innerHTML = `<h3>🧠 Estado de hoy</h3>
+      <div class="grid3">
+        <div><label class="help">Ánimo</label>${rating('wl-a', wToday.animo)}</div>
+        <div><label class="help">Estrés</label>${rating('wl-s', wToday.estres)}</div>
+        <div><label class="help">Energía</label>${rating('wl-e', wToday.energia)}</div>
+      </div>
+      <button class="btn btn-primary" id="wl-save" style="width:100%;margin-top:10px">Guardar estado</button>`;
+    wlCard.querySelector('#wl-save').onclick = () => onWellness({ fecha:today,
+      animo:Number(wlCard.querySelector('#wl-a').value)||null, estres:Number(wlCard.querySelector('#wl-s').value)||null,
+      energia:Number(wlCard.querySelector('#wl-e').value)||null });
+    wrap.appendChild(wlCard);
+
+    // --- Hábitos ---
+    const hCard = el('div','card');
+    hCard.innerHTML = `<h3>🔁 Hábitos</h3>`;
+    if (!habits.length) hCard.appendChild(el('div','empty','Crea tus hábitos diarios (agua, proteína, pasos...).'));
+    const doneToday = new Set(habitLogs.filter(l=>l.fecha===today).map(l=>l.habit_id));
+    habits.forEach(hb=>{
+      const done = doneToday.has(hb.id);
+      const streak = Logic.habitStreak(habitLogs, hb.id);
+      const it = el('div','list-item');
+      it.innerHTML = `<div class="row" style="gap:8px"><button class="icon-btn ht" style="${done?'background:var(--grad);color:#04201d':''}">${done?'✓':'○'}</button>
+        <div><div style="font-weight:600">${esc(hb.icono||'')} ${esc(hb.nombre)}</div>
+        <div class="ex-meta">${streak>0?`🔥 ${streak} días`:'sin racha'}</div></div></div>
+        <button class="icon-btn hd">🗑️</button>`;
+      it.querySelector('.ht').onclick = () => onToggleHabit(hb.id, today, !done);
+      it.querySelector('.hd').onclick = () => { if(confirm(`¿Eliminar hábito "${hb.nombre}"?`)) onDeleteHabit(hb.id); };
+      hCard.appendChild(it);
+    });
+    const hf = el('div','row'); hf.style.cssText='gap:8px;margin-top:10px';
+    hf.innerHTML = `<input id="h-ico" placeholder="💧" style="width:64px;text-align:center">
+      <input id="h-nom" placeholder="Nuevo hábito" style="flex:1">
+      <button class="btn btn-primary" id="h-add">+</button>`;
+    hf.querySelector('#h-add').onclick = () => { const n=hf.querySelector('#h-nom').value.trim(); if(!n) return toast('Nombre del hábito');
+      onAddHabit({ nombre:n, icono:hf.querySelector('#h-ico').value.trim()||'✅', orden:habits.length }); };
+    hCard.appendChild(hf);
+    wrap.appendChild(hCard);
+
+    // --- Lesiones ---
+    const iCard = el('div','card');
+    iCard.innerHTML = `<h3>🩹 Lesiones</h3>`;
+    if (!injuries.length) iCard.appendChild(el('div','empty','Sin lesiones registradas.'));
+    injuries.forEach(inj=>{
+      const it = el('div','list-item');
+      it.innerHTML = `<div><div style="font-weight:600">${esc(inj.zona)} ${inj.severidad?`· sev ${inj.severidad}/5`:''} ${inj.estado==='recuperada'?'<span class="pill b">recuperada</span>':'<span class="pill a">activa</span>'}</div>
+        <div class="ex-meta">${esc(inj.tipo||'')} ${inj.fecha_inicio?`· desde ${inj.fecha_inicio}`:''}${inj.notas?` · ${esc(inj.notas)}`:''}</div></div>
+        <div class="row" style="gap:4px">${inj.estado==='activa'?'<button class="icon-btn ok" title="Marcar recuperada">✅</button>':''}<button class="icon-btn dl">🗑️</button></div>`;
+      if(inj.estado==='activa') it.querySelector('.ok').onclick = () => onUpdateInjury(inj.id, { estado:'recuperada', fecha_fin:today });
+      it.querySelector('.dl').onclick = () => { if(confirm('¿Eliminar lesión?')) onDeleteInjury(inj.id); };
+      iCard.appendChild(it);
+    });
+    const inf = el('div'); inf.style.marginTop='10px';
+    inf.innerHTML = `<div class="divider"></div>
+      <div class="row" style="gap:8px"><input id="i-zona" placeholder="Zona (ej: pulgar derecho)" style="flex:1">
+        <div style="width:90px"><label class="help">Sev.</label>${rating('i-sev','')}</div></div>
+      <input id="i-tipo" placeholder="Tipo (tendinopatía, contractura...)" style="margin-top:8px">
+      <input id="i-notas" placeholder="Notas (opcional)" style="margin-top:8px">
+      <button class="btn btn-primary" id="i-add" style="width:100%;margin-top:10px">Registrar lesión</button>`;
+    inf.querySelector('#i-add').onclick = () => { const z=inf.querySelector('#i-zona').value.trim(); if(!z) return toast('Indica la zona');
+      onAddInjury({ zona:z, tipo:inf.querySelector('#i-tipo').value.trim()||null, severidad:Number(inf.querySelector('#i-sev').value)||null,
+        notas:inf.querySelector('#i-notas').value.trim()||null, estado:'activa', fecha_inicio:today }); };
+    iCard.appendChild(inf);
+    wrap.appendChild(iCard);
+
+    return wrap;
+  }
+
   // ---------- AJUSTES ----------
   function renderAjustes({ profile, email, lastWeight, onSaveProfile, onExport, onImport, onSignOut }) {
     const wrap = el('div');
@@ -857,5 +1004,5 @@ const UI = (() => {
   }
 
   return { $, el, esc, toast, setMain, renderDashboard, renderHoy, renderRutina, exerciseForm,
-           renderAvances, renderPeso, renderNutricion, renderAjustes };
+           renderAvances, renderPeso, renderNutricion, renderSalud, renderAjustes };
 })();

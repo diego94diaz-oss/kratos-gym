@@ -366,8 +366,15 @@ const Logic = (() => {
   }
 
   // Motor de alertas (combina todo)
-  function buildAlerts({ sets, weights, foodLogs, profile, lastWeight }){
+  function buildAlerts({ sets, weights, foodLogs, profile, lastWeight, sleep = [], wellness = [], injuries = [] }){
     const out = [];
+    const today = todayISO();
+    // Readiness bajo hoy
+    const rd = readiness(sleep.find(s=>s.fecha===today), wellness.find(w=>w.fecha===today));
+    if (rd != null && rd < 50) out.push({ level:'warn', icon:'🔋', text:`Readiness bajo (${rd}/100). Hoy prioriza recuperación: baja volumen o haz movilidad.` });
+    // Lesiones activas
+    const act = injuries.filter(i=>i.estado==='activa');
+    if (act.length) out.push({ level:'info', icon:'🩹', text:`Lesión activa: ${act.map(i=>i.zona).join(', ')}. Entrena alrededor y evita lo que duela.` });
     const since = daysSinceTraining(sets);
     if (since != null && since >= 4)
       out.push({ level:'warn', icon:'⏰', text:`Llevas ${since} días sin entrenar. Retoma para no perder el ritmo.` });
@@ -424,5 +431,36 @@ const Logic = (() => {
            MEALS, ACTIVITY, bmrMifflin, nutritionTargets, effectiveTargets, macrosFor, sumFoods,
            SET_TYPES, rirFromRpe, rpeFromRir, restSuggestion,
            e1rmByDate, stalledExercises, deloadAdvice, adaptiveTDEE, adaptiveAdvice,
-           daysSinceTraining, sessionsInLast, loggingStreak, buildAlerts, weeklyReport };
+           daysSinceTraining, sessionsInLast, loggingStreak, buildAlerts, weeklyReport,
+           habitStreak, readiness, goalCurrentValue, goalProgress };
+
+  // ---- Salud / hábitos / objetivos (Fase 2 batch B) ----
+  function habitStreak(habitLogs, habitId){
+    const set = new Set(habitLogs.filter(l => l.habit_id === habitId).map(l => l.fecha));
+    const d = new Date();
+    if (!set.has(d.toISOString().slice(0,10))) d.setDate(d.getDate()-1);
+    let s = 0;
+    for (;;){ const iso = d.toISOString().slice(0,10); if (set.has(iso)){ s++; d.setDate(d.getDate()-1); } else break; }
+    return s;
+  }
+  // Readiness 0-100 (sueño + ánimo + energía + estrés invertido)
+  function readiness(sleepToday, wellnessToday){
+    const parts = [];
+    if (sleepToday){ if (sleepToday.horas != null) parts.push(Math.min(1, sleepToday.horas/8)); if (sleepToday.calidad != null) parts.push(sleepToday.calidad/5); }
+    if (wellnessToday){ if (wellnessToday.energia != null) parts.push(wellnessToday.energia/5); if (wellnessToday.animo != null) parts.push(wellnessToday.animo/5); if (wellnessToday.estres != null) parts.push((6 - wellnessToday.estres)/5); }
+    if (!parts.length) return null;
+    return Math.round(parts.reduce((a,b)=>a+b,0)/parts.length*100);
+  }
+  function goalCurrentValue(goal, ctx){
+    if (goal.tipo === 'peso') return ctx.lastWeight ?? null;
+    if (goal.tipo === 'medida'){ const m = latestMeasures(ctx.measurements||[])[goal.referencia]; return m ? m.valor_cm : null; }
+    if (goal.tipo === 'fuerza'){ const ser = e1rmByDate(ctx.sets||[], goal.referencia); return ser.length ? ser[ser.length-1][1] : null; }
+    return null;
+  }
+  function goalProgress(goal, current){
+    const ini = Number(goal.valor_inicial), obj = Number(goal.valor_objetivo);
+    if (current == null || !isFinite(ini) || !isFinite(obj) || ini === obj) return null;
+    let pct = (current - ini) / (obj - ini);
+    return Math.round(Math.max(0, Math.min(1, pct)) * 100);
+  }
 })();

@@ -204,6 +204,36 @@ const DB = (() => {
     await sb.from('progress_photos').delete().eq('id', id).eq('user_id', uid());
   }
 
+  // ---- Sueño ----
+  async function addSleep(s){ s.user_id=uid(); const { error } = await sb.from('sleep_logs').upsert(s, { onConflict:'user_id,fecha' }); if(error) throw error; }
+  async function getSleep(){ const { data } = await sb.from('sleep_logs').select('*').eq('user_id', uid()).order('fecha'); return data||[]; }
+
+  // ---- Bienestar (ánimo/estrés/energía) ----
+  async function addWellness(w){ w.user_id=uid(); const { error } = await sb.from('wellness_logs').upsert(w, { onConflict:'user_id,fecha' }); if(error) throw error; }
+  async function getWellness(){ const { data } = await sb.from('wellness_logs').select('*').eq('user_id', uid()).order('fecha'); return data||[]; }
+
+  // ---- Hábitos ----
+  async function getHabits(){ const { data } = await sb.from('habits').select('*').eq('user_id', uid()).eq('activo', true).order('orden'); return data||[]; }
+  async function addHabit(h){ h.user_id=uid(); const { data, error } = await sb.from('habits').insert(h).select().single(); if(error) throw error; return data; }
+  async function deleteHabit(id){ await sb.from('habits').update({ activo:false }).eq('id', id).eq('user_id', uid()); }
+  async function getHabitLogs(){ const { data } = await sb.from('habit_logs').select('*').eq('user_id', uid()).order('fecha'); return data||[]; }
+  async function setHabitLog(habit_id, fecha, done){
+    if (done){ const { error } = await sb.from('habit_logs').upsert({ user_id:uid(), habit_id, fecha }, { onConflict:'user_id,habit_id,fecha' }); if(error) throw error; }
+    else { await sb.from('habit_logs').delete().eq('user_id', uid()).eq('habit_id', habit_id).eq('fecha', fecha); }
+  }
+
+  // ---- Lesiones ----
+  async function getInjuries(){ const { data } = await sb.from('injuries').select('*').eq('user_id', uid()).order('created_at', { ascending:false }); return data||[]; }
+  async function addInjury(i){ i.user_id=uid(); const { error } = await sb.from('injuries').insert(i); if(error) throw error; }
+  async function updateInjury(id, patch){ await sb.from('injuries').update(patch).eq('id', id).eq('user_id', uid()); }
+  async function deleteInjury(id){ await sb.from('injuries').delete().eq('id', id).eq('user_id', uid()); }
+
+  // ---- Objetivos ----
+  async function getGoals(){ const { data } = await sb.from('goals').select('*').eq('user_id', uid()).order('created_at', { ascending:false }); return data||[]; }
+  async function addGoal(g){ g.user_id=uid(); const { error } = await sb.from('goals').insert(g); if(error) throw error; }
+  async function updateGoal(id, patch){ await sb.from('goals').update(patch).eq('id', id).eq('user_id', uid()); }
+  async function deleteGoal(id){ await sb.from('goals').delete().eq('id', id).eq('user_id', uid()); }
+
   return {
     configured, init, currentUser, signIn, signUp, signOut, onAuth, uid,
     getProfile, saveProfile,
@@ -213,5 +243,9 @@ const DB = (() => {
     addMeasurement, getMeasurements, deleteMeasurement,
     searchFoods, searchFoodByBarcode, addFoodLog, getFoodLogs, deleteFoodLog,
     uploadPhoto, getPhotos, deletePhoto,
+    addSleep, getSleep, addWellness, getWellness,
+    getHabits, addHabit, deleteHabit, getHabitLogs, setHabitLog,
+    getInjuries, addInjury, updateInjury, deleteInjury,
+    getGoals, addGoal, updateGoal, deleteGoal,
   };
 })();

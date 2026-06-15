@@ -3,7 +3,8 @@
 // ============================================================
 (() => {
   const $ = UI.$;
-  let cache = { exercises:[], sets:[], weights:[], measurements:[], foodLogs:[], photos:[], profile:null };
+  let cache = { exercises:[], sets:[], weights:[], measurements:[], foodLogs:[], photos:[],
+                sleep:[], wellness:[], habits:[], habitLogs:[], injuries:[], goals:[], profile:null };
   let currentTab = 'hoy';
   let pickedDay = null;
   let trainingMode = false;
@@ -54,6 +55,13 @@
     // Tablas de Fase 1 (nutrición/fotos): pueden no existir aún si no se corrió la migración.
     try { cache.foodLogs = await DB.getFoodLogs(); } catch { cache.foodLogs = []; }
     try { cache.photos   = await DB.getPhotos();   } catch { cache.photos = []; }
+    // Tablas de Fase 2 (salud/objetivos): idem.
+    try { cache.sleep     = await DB.getSleep();     } catch { cache.sleep = []; }
+    try { cache.wellness  = await DB.getWellness();  } catch { cache.wellness = []; }
+    try { cache.habits    = await DB.getHabits();    } catch { cache.habits = []; }
+    try { cache.habitLogs = await DB.getHabitLogs(); } catch { cache.habitLogs = []; }
+    try { cache.injuries  = await DB.getInjuries();  } catch { cache.injuries = []; }
+    try { cache.goals     = await DB.getGoals();     } catch { cache.goals = []; }
   }
 
   async function ensureSeed(){
@@ -86,6 +94,7 @@
       } else {
         UI.setMain(UI.renderDashboard({ profile:cache.profile, exercises:cache.exercises, sets:cache.sets,
           weights:cache.weights, measurements:cache.measurements, foodLogs:cache.foodLogs, lastWeight:lastWeightKg(), day,
+          sleep:cache.sleep, wellness:cache.wellness, injuries:cache.injuries,
           onTrain: () => { trainingMode=true; reqWake(); render(); },
           onGo: tab => setTab(tab) }));
       }
@@ -118,6 +127,27 @@
             ()=>{ cache.foodLogs=[...cache.foodLogs, {...l}]; });
           if(ok){ cache.foodLogs=await DB.getFoodLogs(); Offline.saveCache(cache); UI.toast('Registrado'); } render(); },
         onDeleteLog: async id => { await DB.deleteFoodLog(id); cache.foodLogs=await DB.getFoodLogs(); Offline.saveCache(cache); render(); } }));
+    } else if (currentTab==='salud') {
+      const reload = async () => { try {
+        cache.sleep=await DB.getSleep(); cache.wellness=await DB.getWellness();
+        cache.habits=await DB.getHabits(); cache.habitLogs=await DB.getHabitLogs();
+        cache.injuries=await DB.getInjuries(); cache.goals=await DB.getGoals();
+        Offline.saveCache(cache);
+      } catch(e){ UI.toast('Error: '+(e.message||'')); } render(); };
+      UI.setMain(UI.renderSalud({
+        sleep:cache.sleep, wellness:cache.wellness, habits:cache.habits, habitLogs:cache.habitLogs,
+        injuries:cache.injuries, goals:cache.goals,
+        ctx:{ lastWeight:lastWeightKg(), measurements:cache.measurements, sets:cache.sets },
+        onSleep: async s => { await DB.addSleep(s); await reload(); UI.toast('Sueño guardado'); },
+        onWellness: async w => { await DB.addWellness(w); await reload(); UI.toast('Estado guardado'); },
+        onAddHabit: async h => { await DB.addHabit(h); await reload(); },
+        onDeleteHabit: async id => { await DB.deleteHabit(id); await reload(); },
+        onToggleHabit: async (hid, fecha, done) => { await DB.setHabitLog(hid, fecha, done); await reload(); },
+        onAddInjury: async i => { await DB.addInjury(i); await reload(); UI.toast('Lesión registrada'); },
+        onUpdateInjury: async (id, patch) => { await DB.updateInjury(id, patch); await reload(); },
+        onDeleteInjury: async id => { await DB.deleteInjury(id); await reload(); },
+        onAddGoal: async g => { await DB.addGoal(g); await reload(); UI.toast('Objetivo creado'); },
+        onDeleteGoal: async id => { await DB.deleteGoal(id); await reload(); } }));
     } else if (currentTab==='ajustes') {
       UI.setMain(UI.renderAjustes({ profile:cache.profile, email:(DB.currentUserEmail||''), lastWeight:lastWeightKg(),
         onSaveProfile: async p => { await DB.saveProfile({...cache.profile, ...p}); cache.profile=await DB.getProfile(); UI.toast('Perfil guardado'); render(); },
