@@ -95,7 +95,8 @@
         onEdit: ex => UI.setMain(UI.exerciseForm(ex, ex.dia, onExForm)),
         onDelete: async id => { await DB.deleteExercise(id); cache.exercises=await DB.getExercises(); render(); UI.toast('Eliminado'); } }));
     } else if (currentTab==='avances') {
-      UI.setMain(UI.renderAvances({ sets:cache.sets, exercises:cache.exercises }));
+      UI.setMain(UI.renderAvances({ sets:cache.sets, exercises:cache.exercises,
+        weights:cache.weights, foodLogs:cache.foodLogs, profile:cache.profile, lastWeight:lastWeightKg() }));
     } else if (currentTab==='peso') {
       UI.setMain(UI.renderPeso({ weights:cache.weights, profile:cache.profile, measurements:cache.measurements, photos:cache.photos,
         onAdd: async w => { const ok = await tryWrite('weight', ()=>DB.addWeight(w), w,
@@ -110,7 +111,7 @@
         onDeletePhoto: async (id, path) => { await DB.deletePhoto(id, path); cache.photos=await DB.getPhotos(); render(); } }));
     } else if (currentTab==='nutricion') {
       nutriDate = nutriDate || Logic.todayISO();
-      UI.setMain(UI.renderNutricion({ logs:cache.foodLogs, profile:cache.profile, lastWeight:lastWeightKg(), date:nutriDate,
+      UI.setMain(UI.renderNutricion({ logs:cache.foodLogs, profile:cache.profile, lastWeight:lastWeightKg(), weights:cache.weights, date:nutriDate,
         onChangeDate: d => { nutriDate=d; render(); },
         onSearch: term => DB.searchFoods(term),
         onLog: async l => { const ok = await tryWrite('food', ()=>DB.addFoodLog(l), l,

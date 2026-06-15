@@ -168,6 +168,17 @@ const UI = (() => {
       <div style="font-size:1.5rem;font-weight:850;letter-spacing:-.03em;margin:0 2px 14px">${saludo} 💪</div>`;
     wrap.appendChild(head);
 
+    // --- Avisos (motor de alertas) ---
+    const alerts = Logic.buildAlerts({ sets, weights, foodLogs, profile, lastWeight });
+    if (alerts.length) {
+      const aCard = el('div','card');
+      aCard.style.borderLeft = '3px solid var(--warn)';
+      aCard.innerHTML = `<div class="section-title" style="margin-top:0">Avisos del coach</div>` +
+        alerts.map(a => `<div class="rec" style="margin:6px 0;display:flex;gap:8px;align-items:flex-start">
+          <span>${a.icon}</span><span class="${a.level==='good'?'tag-up':a.level==='warn'?'tag-keep':''}" style="font-weight:500">${esc(a.text)}</span></div>`).join('');
+      wrap.appendChild(aCard);
+    }
+
     // --- Entrenamiento de hoy ---
     const dayEx = exercises.filter(e => e.dia === day && e.activo !== false);
     const todaySets = sets.filter(s => s.fecha === today);
@@ -231,12 +242,14 @@ const UI = (() => {
       const totalSessions = new Set(sets.map(s=>s.fecha)).size;
       const prs = Logic.prsByExercise(sets);
       const sCard = el('div','card');
+      const streak = Logic.loggingStreak(foodLogs || []);
       sCard.innerHTML = `<div class="row between"><h3 style="margin:0">📈 Progreso</h3><span class="btn-link">Ver →</span></div>
         <div class="grid3" style="margin-top:8px">
           <div class="stat"><div class="big" style="font-size:1.6rem">${weekSessions}</div><div class="label">Esta semana</div></div>
           <div class="stat"><div class="big" style="font-size:1.6rem">${totalSessions}</div><div class="label">Sesiones</div></div>
           <div class="stat"><div class="big" style="font-size:1.6rem">${Object.keys(prs).length}</div><div class="label">PRs</div></div>
-        </div>`;
+        </div>
+        ${streak>=2?`<div class="ex-meta" style="text-align:center;margin-top:10px">🔥 Racha de registro de nutrición: <b>${streak} días</b></div>`:''}`;
       sCard.onclick = () => onGo('avances');
       sCard.style.cursor = 'pointer';
       wrap.appendChild(sCard);
@@ -311,9 +324,36 @@ const UI = (() => {
   }
 
   // ---------- AVANCES ----------
-  function renderAvances({ sets, exercises }) {
+  function renderAvances({ sets, exercises, weights = [], foodLogs = [], profile, lastWeight }) {
     const wrap = el('div');
     if (!sets.length) { wrap.appendChild(el('div','empty','Aún no hay sesiones. Registra tu primera en "Hoy".')); return wrap; }
+
+    // --- Informe semanal ---
+    const r = Logic.weeklyReport({ sets, weights, foodLogs, exercises, profile, lastWeight });
+    const rep = el('div','card');
+    const muscles = Object.entries(r.perMuscle).sort((a,b)=>b[1]-a[1]);
+    rep.innerHTML = `<div class="section-title" style="margin-top:0">Informe de los últimos 7 días</div>
+      <div class="grid3">
+        <div class="stat"><div class="big" style="font-size:1.5rem">${r.sessions}</div><div class="label">Sesiones</div></div>
+        <div class="stat"><div class="big" style="font-size:1.5rem">${r.setsCount}</div><div class="label">Series</div></div>
+        <div class="stat"><div class="big" style="font-size:1.5rem">${Math.round(r.volume/1000)}t</div><div class="label">Volumen</div></div>
+      </div>
+      ${muscles.length?`<p class="help" style="margin-top:10px">Series por grupo: ${muscles.map(([g,n])=>`${esc(g)} ${n}`).join(' · ')}</p>`:''}
+      ${r.wDelta!=null?`<div class="ex-meta">⚖️ Peso: ${r.wDelta>0?'+':''}${r.wDelta} kg esta semana</div>`:''}
+      ${r.avgKcal!=null?`<div class="ex-meta">🍽️ Nutrición: ${r.nDays} días · ~${r.avgKcal} kcal · ${r.avgProt} g proteína prom.</div>`:''}
+      ${r.prs.length?`<div class="ex-meta tag-up">🏆 ${r.prs.length} PR esta semana: ${esc(r.prs.map(p=>p.ejercicio).join(', '))}</div>`:''}`;
+    wrap.appendChild(rep);
+
+    // --- Estancamiento / deload ---
+    const dl = Logic.deloadAdvice(sets);
+    const stalled = Logic.stalledExercises(sets);
+    if (dl) {
+      const dCard = el('div','card');
+      dCard.innerHTML = `<div class="row between"><h3 style="margin:0">🔄 Progresión y fatiga</h3></div>
+        <div class="rec" style="margin-top:8px"><span class="${dl.due?'tag-down':'tag-up'}">${dl.due?'DELOAD SUGERIDO':'EN PROGRESO'}</span> · ${dl.due?esc(dl.text):`${dl.tracked-dl.stalled} de ${dl.tracked} ejercicios progresando bien. Sigue así.`}</div>
+        ${stalled.length?`<p class="help">Estancados: ${stalled.map(s=>esc(s.ejercicio)).join(', ')}. Prueba variar el ejercicio, sumar una serie o revisar técnica/descanso.</p>`:''}`;
+      wrap.appendChild(dCard);
+    }
 
     const totalSesiones = new Set(sets.map(s=>s.fecha)).size;
     const prs = Logic.prsByExercise(sets);
@@ -558,7 +598,7 @@ const UI = (() => {
       <div class="bar ${over?'over':''}"><i style="width:${pct}%"></i></div></div>`;
   }
 
-  function renderNutricion({ logs, profile, lastWeight, date, onChangeDate, onSearch, onLog, onDeleteLog }) {
+  function renderNutricion({ logs, profile, lastWeight, weights = [], date, onChangeDate, onSearch, onLog, onDeleteLog }) {
     const wrap = el('div');
     const t = Logic.effectiveTargets(profile, lastWeight);
     const dayLogs = logs.filter(l => l.fecha === date);
@@ -581,6 +621,17 @@ const UI = (() => {
       ${!t.kcal?'<p class="help">Completa edad, sexo y actividad en Ajustes para calcular tus objetivos.</p>':''}`;
     sumCard.querySelector('#n-fecha').onchange = e => onChangeDate(e.target.value);
     wrap.appendChild(sumCard);
+
+    // --- Ajuste calórico adaptativo (TDEE real) ---
+    const ad = Logic.adaptiveTDEE(weights, logs);
+    const adAdvice = Logic.adaptiveAdvice(profile, ad);
+    if (adAdvice) {
+      const adCard = el('div','card');
+      adCard.innerHTML = `<div class="section-title" style="margin-top:0">Ajuste adaptativo (estilo MacroFactor)</div>
+        <div class="rec"><span class="${adAdvice.clase}">TDEE ~${ad.tdee} kcal</span> · ${esc(adAdvice.texto)}</div>
+        <p class="help">Estimado de tu ingesta real (${ad.loggedDays} días registrados) y la tendencia de tu peso. Se afina semana a semana.</p>`;
+      wrap.appendChild(adCard);
+    }
 
     // --- Agregar alimento ---
     const addCard = el('div','card');

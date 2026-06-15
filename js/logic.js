@@ -271,9 +271,158 @@ const Logic = (() => {
     return compound ? 150 : 90;
   }
 
+  // ============================================================
+  //  INTELIGENCIA (Fase 2): estancamiento, deload, TDEE adaptativo,
+  //  adherencia, alertas e informe semanal.
+  // ============================================================
+  const isoDaysAgo = d => new Date(Date.now() - d*86400000).toISOString().slice(0,10);
+  const effSets = sets => sets.filter(s => s.peso_kg > 0 && s.set_type !== 'calentamiento');
+
+  // Mejor e1RM por fecha de un ejercicio -> [[fecha, e1rm], ...]
+  function e1rmByDate(sets, ejercicio){
+    const by = {};
+    effSets(sets).filter(s => s.ejercicio === ejercicio).forEach(s => {
+      const e = s.peso_kg * (1 + s.reps/30);
+      by[s.fecha] = Math.max(by[s.fecha] || 0, e);
+    });
+    return Object.entries(by).sort().map(([f,e]) => [f, +e.toFixed(1)]);
+  }
+
+  // Ejercicios estancados (sin mejora de e1RM en las últimas ~3 sesiones)
+  function stalledExercises(sets, minSessions = 3){
+    const names = [...new Set(effSets(sets).map(s => s.ejercicio))];
+    const out = [];
+    names.forEach(n => {
+      const ser = e1rmByDate(sets, n);
+      if (ser.length < minSessions) return;
+      const recent = ser.slice(-3);
+      const change = (recent[recent.length-1][1] - recent[0][1]) / recent[0][1];
+      if (change <= 0.005) out.push({ ejercicio:n, changePct:+(change*100).toFixed(1), sessions:ser.length });
+    });
+    return out;
+  }
+
+  // ¿Toca deload? (heurística: ≥50% de ejercicios con historial, estancados)
+  function deloadAdvice(sets){
+    const tracked = [...new Set(effSets(sets).map(s => s.ejercicio))]
+      .map(n => e1rmByDate(sets, n)).filter(s => s.length >= 3).length;
+    if (tracked < 2) return null;
+    const stalled = stalledExercises(sets);
+    const ratio = stalled.length / tracked;
+    if (ratio >= 0.5) return { due:true, stalled:stalled.length, tracked,
+      text:`${stalled.length} de ${tracked} ejercicios estancados. Considera una semana de descarga: −40-50% de volumen manteniendo la intensidad, luego retoma.` };
+    return { due:false, stalled:stalled.length, tracked };
+  }
+
+  // TDEE adaptativo: gasto real inferido de la ingesta y el cambio de peso
+  function adaptiveTDEE(weights, foodLogs, days = 14){
+    const since = isoDaysAgo(days);
+    const byDate = {};
+    foodLogs.filter(l => l.fecha >= since).forEach(l => { byDate[l.fecha] = (byDate[l.fecha]||0) + (+l.kcal||0); });
+    const loggedDays = Object.keys(byDate);
+    if (loggedDays.length < 7) return null;
+    const avgIntake = Math.round(Object.values(byDate).reduce((a,b)=>a+b,0) / loggedDays.length);
+    const w = weights.filter(x => x.fecha >= since).map(x => ({ t:new Date(x.fecha).getTime()/86400000, y:+x.peso_kg }));
+    if (w.length < 4) return null;
+    const n=w.length, sx=w.reduce((a,p)=>a+p.t,0), sy=w.reduce((a,p)=>a+p.y,0),
+          sxx=w.reduce((a,p)=>a+p.t*p.t,0), sxy=w.reduce((a,p)=>a+p.t*p.y,0);
+    const slope = (n*sxy - sx*sy) / (n*sxx - sx*sx); // kg/día
+    if (!isFinite(slope)) return null;
+    const tdee = Math.round(avgIntake - slope*7700);
+    return { tdee, avgIntake, slopeWeek:+(slope*7).toFixed(2), loggedDays:loggedDays.length };
+  }
+
+  // Recomendación calórica adaptativa según objetivo
+  function adaptiveAdvice(profile, ad){
+    if (!ad) return null;
+    const obj = profile?.objetivo || 'recomposicion';
+    const wanted = { ganar:0.3, perder:-0.5, recomposicion:0.0, fuerza:0.1, mantener:0.0 }[obj] ?? 0;
+    const diff = ad.slopeWeek - wanted; // + = subiendo más de lo deseado
+    const kcalAdj = Math.round((-diff * 7700/7) / 10) * 10;
+    let clase='tag-up', texto;
+    if (Math.abs(diff) < 0.12) texto = `Tu ritmo (${ad.slopeWeek>0?'+':''}${ad.slopeWeek} kg/sem) coincide con tu objetivo. Mantén ~${ad.tdee} kcal.`;
+    else { clase = 'tag-keep';
+      texto = `Gasto real estimado ~${ad.tdee} kcal/día. Para tu objetivo, ${kcalAdj>0?'sube':'baja'} ~${Math.abs(kcalAdj)} kcal/día (de ${ad.avgIntake} a ~${ad.avgIntake+kcalAdj}).`; }
+    return { clase, texto, kcalSugerido: ad.avgIntake + kcalAdj };
+  }
+
+  // Adherencia y rachas
+  function daysSinceTraining(sets){
+    if (!sets.length) return null;
+    const last = [...new Set(sets.map(s=>s.fecha))].sort().pop();
+    return Math.floor((Date.now() - new Date(last).getTime()) / 86400000);
+  }
+  function sessionsInLast(sets, days){
+    const since = isoDaysAgo(days);
+    return new Set(sets.filter(s => s.fecha >= since).map(s => s.fecha)).size;
+  }
+  function loggingStreak(foodLogs){
+    const set = new Set(foodLogs.map(l => l.fecha));
+    const d = new Date();
+    if (!set.has(d.toISOString().slice(0,10))) d.setDate(d.getDate()-1); // permite que hoy aún no esté
+    let streak = 0;
+    for (;;){ const iso = d.toISOString().slice(0,10); if (set.has(iso)){ streak++; d.setDate(d.getDate()-1); } else break; }
+    return streak;
+  }
+
+  // Motor de alertas (combina todo)
+  function buildAlerts({ sets, weights, foodLogs, profile, lastWeight }){
+    const out = [];
+    const since = daysSinceTraining(sets);
+    if (since != null && since >= 4)
+      out.push({ level:'warn', icon:'⏰', text:`Llevas ${since} días sin entrenar. Retoma para no perder el ritmo.` });
+    const dl = deloadAdvice(sets);
+    if (dl?.due) out.push({ level:'warn', icon:'🔄', text:dl.text });
+    // proteína baja sostenida (últimos días con registro)
+    const t = effectiveTargets(profile, lastWeight);
+    if (t.prot){
+      const since5 = isoDaysAgo(7);
+      const byDate = {};
+      foodLogs.filter(l=>l.fecha>=since5).forEach(l=>{ byDate[l.fecha]=(byDate[l.fecha]||0)+(+l.prot||0); });
+      const ds = Object.values(byDate);
+      if (ds.length >= 3){
+        const avg = ds.reduce((a,b)=>a+b,0)/ds.length;
+        if (avg < t.prot*0.8) out.push({ level:'warn', icon:'🥩', text:`Proteína baja: promedias ${Math.round(avg)} g/día (objetivo ${t.prot} g). Súbela para conservar músculo.` });
+      }
+    }
+    // peso fuera de ritmo
+    const adv = bodyAdvice(profile, weights);
+    if (adv && adv.clase === 'tag-down') out.push({ level:'warn', icon:'⚖️', text:adv.texto });
+    // PR reciente (positivo)
+    const since7 = isoDaysAgo(7);
+    const recentPRs = newPRs(sets.filter(s=>s.fecha<since7), sets.filter(s=>s.fecha>=since7));
+    if (recentPRs.length) out.push({ level:'good', icon:'🏆', text:`¡${recentPRs.length} récord(s) esta semana! Último: ${recentPRs[0].ejercicio}.` });
+    return out;
+  }
+
+  // Informe semanal
+  function weeklyReport({ sets, weights, foodLogs, exercises, profile, lastWeight }){
+    const since = isoDaysAgo(7);
+    const week = effSets(sets).filter(s => s.fecha >= since);
+    const sessions = new Set(week.map(s=>s.fecha)).size;
+    const volume = Math.round(week.reduce((a,s)=>a + s.peso_kg*s.reps, 0));
+    const setsCount = week.length;
+    const grupoOf = {}; exercises.forEach(e => grupoOf[e.nombre] = e.grupo || 'otro');
+    const perMuscle = {};
+    week.forEach(s => { const g = grupoOf[s.ejercicio] || 'otro'; perMuscle[g] = (perMuscle[g]||0) + 1; });
+    const prs = newPRs(sets.filter(s=>s.fecha<since), week);
+    // peso
+    const wWeek = weights.filter(x => x.fecha >= since);
+    const wDelta = wWeek.length >= 2 ? +(Number(wWeek[wWeek.length-1].peso_kg) - Number(wWeek[0].peso_kg)).toFixed(1) : null;
+    // nutrición
+    const fByDate = {}; const pByDate = {};
+    foodLogs.filter(l=>l.fecha>=since).forEach(l=>{ fByDate[l.fecha]=(fByDate[l.fecha]||0)+(+l.kcal||0); pByDate[l.fecha]=(pByDate[l.fecha]||0)+(+l.prot||0); });
+    const nDays = Object.keys(fByDate).length;
+    const avgKcal = nDays ? Math.round(Object.values(fByDate).reduce((a,b)=>a+b,0)/nDays) : null;
+    const avgProt = nDays ? Math.round(Object.values(pByDate).reduce((a,b)=>a+b,0)/nDays) : null;
+    return { sessions, volume, setsCount, perMuscle, prs, wDelta, nDays, avgKcal, avgProt };
+  }
+
   return { todayISO, nextDay, lastSessionOf, recommend, prsByExercise, newPRs,
            volumeByDate, weeklyAvg, weeklyTrend, bodyAdvice,
            MEASURE_DEFS, latestMeasures, measureSeries, bodyFatNavy, composition,
            MEALS, ACTIVITY, bmrMifflin, nutritionTargets, effectiveTargets, macrosFor, sumFoods,
-           SET_TYPES, rirFromRpe, rpeFromRir, restSuggestion };
+           SET_TYPES, rirFromRpe, rpeFromRir, restSuggestion,
+           e1rmByDate, stalledExercises, deloadAdvice, adaptiveTDEE, adaptiveAdvice,
+           daysSinceTraining, sessionsInLast, loggingStreak, buildAlerts, weeklyReport };
 })();
