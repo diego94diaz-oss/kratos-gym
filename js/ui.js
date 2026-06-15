@@ -155,6 +155,35 @@ const UI = (() => {
     upd();
   }
 
+  // Escáner de código de barras (BarcodeDetector; fallback a entrada manual)
+  async function startScanner(onCode){
+    if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia){
+      const code = prompt('Tu dispositivo no soporta escaneo. Ingresa el código de barras manualmente:');
+      if (code && code.trim()) onCode(code.trim());
+      return;
+    }
+    let stream, raf, stopped = false;
+    const ov = el('div','scan-ov');
+    ov.innerHTML = `<div class="scan-hint">Apunta al código de barras</div>
+      <video playsinline muted></video><div class="scan-frame"></div>
+      <div class="scan-bar"><span class="muted">Buscando…</span><button class="btn btn-ghost" id="sc-x">Cancelar</button></div>`;
+    document.body.appendChild(ov);
+    const video = ov.querySelector('video');
+    const cleanup = () => { stopped = true; cancelAnimationFrame(raf); stream?.getTracks().forEach(t=>t.stop()); ov.remove(); };
+    ov.querySelector('#sc-x').onclick = cleanup;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      video.srcObject = stream; await video.play();
+      const det = new window.BarcodeDetector({ formats: ['ean_13','ean_8','upc_a','upc_e','code_128'] });
+      const scan = async () => {
+        if (stopped) return;
+        try { const codes = await det.detect(video); if (codes.length){ const c = codes[0].rawValue; cleanup(); onCode(c); return; } } catch {}
+        raf = requestAnimationFrame(scan);
+      };
+      raf = requestAnimationFrame(scan);
+    } catch (e) { cleanup(); toast('No se pudo abrir la cámara'); }
+  }
+
   // ---------- DASHBOARD (Hoy) ----------
   function renderDashboard({ profile, exercises, sets, weights, measurements, foodLogs, lastWeight, day, sleep = [], wellness = [], injuries = [], onTrain, onGo }) {
     const wrap = el('div');
@@ -259,7 +288,7 @@ const UI = (() => {
   }
 
   // ---------- RUTINA ----------
-  function renderRutina({ exercises, onAdd, onEdit, onDelete }) {
+  function renderRutina({ exercises, onAdd, onEdit, onDelete, onAddFromLib }) {
     const wrap = el('div');
     wrap.appendChild(el('div','section-title','Rutina Full Body A/B · Recomposición'));
     ['A','B'].forEach(d => {
@@ -270,10 +299,27 @@ const UI = (() => {
         const it = el('div','list-item');
         it.innerHTML = `<div><div style="font-weight:600">${esc(ex.nombre)}</div>
           <div class="ex-meta">${ex.series_obj}×${ex.reps_min}-${ex.reps_max} · RIR ${ex.rir_obj??'—'} · ${esc(ex.unidad)}</div></div>
-          <div class="row"><button class="icon-btn ed">✏️</button><button class="icon-btn dl">🗑️</button></div>`;
+          <div class="row"><button class="icon-btn alt" title="Alternativas">🔄</button><button class="icon-btn ed">✏️</button><button class="icon-btn dl">🗑️</button></div>`;
         it.querySelector('.ed').onclick = () => onEdit(ex);
         it.querySelector('.dl').onclick = () => { if(confirm(`¿Eliminar "${ex.nombre}"?`)) onDelete(ex.id); };
+        const altBox = el('div'); altBox.style.cssText = 'display:none;padding:6px 0 2px';
+        it.querySelector('.alt').onclick = () => {
+          if (altBox.style.display === 'block'){ altBox.style.display = 'none'; return; }
+          if (!altBox.childElementCount){
+            const libEx = (window.EXERCISE_LIBRARY||[]).find(x => x.nombre === ex.nombre);
+            const alts = window.libraryAlternatives ? libraryAlternatives(ex.nombre, libEx?.grupo || ex.grupo, libEx?.patron) : [];
+            if (!alts.length) altBox.appendChild(el('div','help','Sin alternativas en la biblioteca.'));
+            alts.forEach(a => {
+              const r = el('div','food-res');
+              r.innerHTML = `<div><div style="font-weight:600">${esc(a.nombre)}</div><div class="ex-meta">${esc(a.grupo)} · ${esc(a.unidad)}</div></div><span class="pill a">+</span>`;
+              r.onclick = () => onAddFromLib(d, a);
+              altBox.appendChild(r);
+            });
+          }
+          altBox.style.display = 'block';
+        };
         card.appendChild(it);
+        card.appendChild(altBox);
       });
       const add = el('button','btn btn-ghost','+ Agregar ejercicio al Día '+d);
       add.style.cssText='width:100%;margin-top:8px';
@@ -285,11 +331,13 @@ const UI = (() => {
   }
 
   function exerciseForm(ex, day, onSubmit) {
-    const isNew = !ex;
-    ex = ex || { dia:day, orden:99, series_obj:3, reps_min:8, reps_max:12, rir_obj:2, incremento_kg:2.5, unidad:'mancuerna', grupo:'' };
+    const isNew = !ex || !ex.id;
+    ex = Object.assign({ dia:day, orden:99, series_obj:3, reps_min:8, reps_max:12, rir_obj:2, incremento_kg:2.5, unidad:'mancuerna', grupo:'' }, ex || {});
     const wrap = el('div','card');
     wrap.innerHTML = `<h3>${isNew?'Nuevo ejercicio':'Editar ejercicio'} · Día ${ex.dia}</h3>
-      <label class="help">Nombre</label><input id="f-nombre" value="${esc(ex.nombre||'')}" placeholder="Ej: Sentadilla">
+      <label class="help">Nombre (escribe o elige de la biblioteca)</label>
+      <input id="f-nombre" list="lib-names" value="${esc(ex.nombre||'')}" placeholder="Ej: Sentadilla">
+      <datalist id="lib-names">${(window.EXERCISE_LIBRARY||[]).map(e=>`<option value="${esc(e.nombre)}">`).join('')}</datalist>
       <label class="help">Grupo muscular</label><input id="f-grupo" value="${esc(ex.grupo||'')}" placeholder="piernas, pecho...">
       <div class="grid3" style="margin-top:8px">
         <div><label class="help">Series</label><input id="f-series" type="number" value="${ex.series_obj}"></div>
@@ -307,6 +355,11 @@ const UI = (() => {
         <button class="btn btn-primary" id="f-save" style="flex:1">Guardar</button>
         <button class="btn btn-ghost" id="f-cancel">Cancelar</button>
       </div>`;
+    // Autocompletar grupo/unidad al elegir de la biblioteca
+    wrap.querySelector('#f-nombre').oninput = e => {
+      const lib = (window.EXERCISE_LIBRARY||[]).find(x => x.nombre === e.target.value);
+      if (lib){ wrap.querySelector('#f-grupo').value = lib.grupo; wrap.querySelector('#f-unidad').value = lib.unidad; }
+    };
     wrap.querySelector('#f-cancel').onclick = () => onSubmit(null);
     wrap.querySelector('#f-save').onclick = () => {
       const nombre = wrap.querySelector('#f-nombre').value.trim();
@@ -598,7 +651,7 @@ const UI = (() => {
       <div class="bar ${over?'over':''}"><i style="width:${pct}%"></i></div></div>`;
   }
 
-  function renderNutricion({ logs, profile, lastWeight, weights = [], date, onChangeDate, onSearch, onLog, onDeleteLog }) {
+  function renderNutricion({ logs, profile, lastWeight, weights = [], date, onChangeDate, onSearch, onLog, onDeleteLog, onScan }) {
     const wrap = el('div');
     const t = Logic.effectiveTargets(profile, lastWeight);
     const dayLogs = logs.filter(l => l.fecha === date);
@@ -639,6 +692,7 @@ const UI = (() => {
       <div class="row" style="gap:8px">
         <input id="n-q" placeholder="Buscar (ej: avena, pollo, yogur...)" style="flex:1">
         <button class="btn btn-primary" id="n-search">🔍</button>
+        <button class="btn btn-ghost" id="n-scan" title="Escanear código">📷</button>
       </div>
       <div class="row" style="gap:8px;margin-top:8px">
         <button class="btn btn-ghost" id="n-manual" style="flex:1">✏️ Entrada manual</button>
@@ -707,6 +761,11 @@ const UI = (() => {
       catch { resBox.innerHTML = '<div class="empty">Error de conexión. Intenta de nuevo o usa entrada manual.</div>'; }
     };
     addCard.querySelector('#n-q').addEventListener('keydown', e=>{ if(e.key==='Enter') addCard.querySelector('#n-search').click(); });
+    addCard.querySelector('#n-scan').onclick = () => startScanner(async code => {
+      resBox.innerHTML = '<div class="empty">Buscando producto…</div>';
+      try { const f = await onScan(code); if (f) portionForm(f); else resBox.innerHTML = `<div class="empty">Código ${esc(code)} no encontrado. Usa entrada manual.</div>`; }
+      catch { resBox.innerHTML = '<div class="empty">Error al buscar el producto.</div>'; }
+    });
     addCard.querySelector('#n-manual').onclick = () => {
       resBox.innerHTML = '';
       const c = el('div','card'); c.style.marginBottom='0';

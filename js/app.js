@@ -101,6 +101,7 @@
     } else if (currentTab==='rutina') {
       UI.setMain(UI.renderRutina({ exercises:cache.exercises,
         onAdd: day => UI.setMain(UI.exerciseForm(null, day, onExForm)),
+        onAddFromLib: (day, lib) => UI.setMain(UI.exerciseForm({ dia:day, nombre:lib.nombre, grupo:lib.grupo, unidad:lib.unidad }, day, onExForm)),
         onEdit: ex => UI.setMain(UI.exerciseForm(ex, ex.dia, onExForm)),
         onDelete: async id => { await DB.deleteExercise(id); cache.exercises=await DB.getExercises(); render(); UI.toast('Eliminado'); } }));
     } else if (currentTab==='avances') {
@@ -123,6 +124,7 @@
       UI.setMain(UI.renderNutricion({ logs:cache.foodLogs, profile:cache.profile, lastWeight:lastWeightKg(), weights:cache.weights, date:nutriDate,
         onChangeDate: d => { nutriDate=d; render(); },
         onSearch: term => DB.searchFoods(term),
+        onScan: code => DB.searchFoodByBarcode(code),
         onLog: async l => { const ok = await tryWrite('food', ()=>DB.addFoodLog(l), l,
             ()=>{ cache.foodLogs=[...cache.foodLogs, {...l}]; });
           if(ok){ cache.foodLogs=await DB.getFoodLogs(); Offline.saveCache(cache); UI.toast('Registrado'); } render(); },

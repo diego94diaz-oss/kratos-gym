@@ -192,6 +192,13 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .rest-ov .bar2 { flex: 1; height: 8px; background: var(--card-2); border-radius: 999px; overflow: hidden; }
 .rest-ov .bar2 > i { display: block; height: 100%; background: var(--grad); transition: width 1s linear; }
 .rest-ov button { background: var(--card-2); border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 8px 12px; font-weight: 700; cursor: pointer; }
+
+/* Escáner de código de barras */
+.scan-ov { position: fixed; inset: 0; z-index: 70; background: #000; display: flex; flex-direction: column; }
+.scan-ov video { flex: 1; width: 100%; object-fit: cover; }
+.scan-ov .scan-bar { padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); background: var(--bg); display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+.scan-ov .scan-hint { color: #fff; position: absolute; top: max(16px, env(safe-area-inset-top)); left: 0; right: 0; text-align: center; font-weight: 600; text-shadow: 0 1px 4px rgba(0,0,0,.8); }
+.scan-frame { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 70%; height: 28%; border: 3px solid var(--primary); border-radius: 14px; box-shadow: 0 0 0 100vmax rgba(0,0,0,.45); }
 .add-set { width: 100%; margin-top: 4px; }
 
 .list-item { display: flex; justify-content: space-between; padding: 11px 0; border-bottom: 1px solid var(--line); }
