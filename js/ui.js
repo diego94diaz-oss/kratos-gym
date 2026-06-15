@@ -229,8 +229,8 @@ const UI = (() => {
     plugins:{ legend:{display:false} },
     scales:{ x:{ ticks:{color:c.text}, grid:{color:c.grid} }, y:{ ticks:{color:c.text}, grid:{color:c.grid} } } }; }
 
-  // ---------- PESO ----------
-  function renderPeso({ weights, profile, onAdd, onDelete }) {
+  // ---------- CUERPO (peso + composición + medidas) ----------
+  function renderPeso({ weights, profile, measurements = [], onAdd, onDelete, onAddMeasure, onDeleteMeasure }) {
     const wrap = el('div');
     const advice = Logic.bodyAdvice(profile, weights);
     const avg = Logic.weeklyAvg(weights);
@@ -244,6 +244,29 @@ const UI = (() => {
       <div class="stat"><div class="big">${trend!=null?(trend>0?'+':'')+trend:'—'}</div><div class="label">kg/sem</div></div>
     </div><div class="rec" style="margin-top:12px"><span class="${advice.clase}">PESO</span> · ${esc(advice.texto)}</div>`;
     wrap.appendChild(top);
+
+    // --- Composición corporal (estimación Navy) ---
+    const latest = Logic.latestMeasures(measurements);
+    const bf = Logic.bodyFatNavy({
+      sexo: profile?.sexo || 'h',
+      cuello: latest.cuello?.valor_cm, cintura: latest.cintura?.valor_cm,
+      cadera: latest.cadera?.valor_cm, estatura_cm: profile?.estatura_cm,
+    });
+    const comp = Logic.composition(bf, last?.peso_kg);
+    const compCard = el('div','card');
+    if (bf != null) {
+      compCard.innerHTML = `<div class="section-title" style="margin-top:0">Composición corporal (estimada)</div>
+        <div class="grid3">
+          <div class="stat"><div class="big">${bf}%</div><div class="label">Grasa corporal</div></div>
+          <div class="stat"><div class="big">${comp?comp.magra:'—'}</div><div class="label">Masa magra (kg)</div></div>
+          <div class="stat"><div class="big">${comp?comp.grasa:'—'}</div><div class="label">Masa grasa (kg)</div></div>
+        </div>
+        <p class="help">Método U.S. Navy (perímetros). Estimación orientativa, no sustituye DEXA/balanza.</p>`;
+    } else {
+      compCard.innerHTML = `<div class="section-title" style="margin-top:0">Composición corporal</div>
+        <p class="help">Registra <b>cuello</b> y <b>cintura</b> (abajo) y completa tu estatura en Ajustes para estimar tu % de grasa corporal.</p>`;
+    }
+    wrap.appendChild(compCard);
 
     const form = el('div','card');
     form.innerHTML = `<h3>Registrar peso</h3>
@@ -273,7 +296,71 @@ const UI = (() => {
       wrap.appendChild(hist);
       setTimeout(()=>drawWeight(weights, profile),30);
     }
+
+    // --- Medidas corporales ---
+    const mForm = el('div','card');
+    mForm.innerHTML = `<h3>Registrar medida (cm)</h3>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <select id="m-tipo" class="day-sel">
+          ${Logic.MEASURE_DEFS.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}
+        </select>
+        <input id="m-val" type="number" inputmode="decimal" step="0.1" placeholder="cm" style="flex:1;min-width:80px">
+        <input id="m-fecha" type="date" value="${Logic.todayISO()}">
+        <button class="btn btn-primary" id="m-save">+</button>
+      </div>`;
+    mForm.querySelector('#m-save').onclick = () => {
+      const valor = Number(mForm.querySelector('#m-val').value);
+      if (!valor) return toast('Ingresa el valor en cm');
+      onAddMeasure({ medida: mForm.querySelector('#m-tipo').value,
+        valor_cm: valor, fecha: mForm.querySelector('#m-fecha').value });
+    };
+    wrap.appendChild(mForm);
+
+    const measuredKeys = Object.keys(latest);
+    if (measuredKeys.length) {
+      // Últimas medidas (grid)
+      const grid = el('div','card');
+      grid.innerHTML = '<h3>Últimas medidas</h3><div class="grid3" id="m-grid"></div>';
+      const gbox = grid.querySelector('#m-grid');
+      Logic.MEASURE_DEFS.filter(([k])=>latest[k]).forEach(([k,l])=>{
+        const s = el('div','stat');
+        s.innerHTML = `<div class="big" style="font-size:1.5rem">${latest[k].valor_cm}</div><div class="label">${l}</div>`;
+        gbox.appendChild(s);
+      });
+      wrap.appendChild(grid);
+
+      // Gráfico por medida + historial
+      const mChartCard = el('div','card');
+      mChartCard.innerHTML = `<div class="row between"><h3>Evolución</h3>
+        <select id="m-pick" class="day-sel">${Logic.MEASURE_DEFS.filter(([k])=>latest[k]).map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select></div>
+        <canvas id="c-m" height="170"></canvas><div id="m-hist"></div>`;
+      wrap.appendChild(mChartCard);
+      const pick = mChartCard.querySelector('#m-pick');
+      const histBox = mChartCard.querySelector('#m-hist');
+      const drawSel = () => {
+        drawMeasure(measurements, pick.value);
+        histBox.innerHTML = '';
+        measurements.filter(m=>m.medida===pick.value).slice().reverse().slice(0,10).forEach(m=>{
+          const it = el('div','list-item');
+          it.innerHTML = `<div><b>${m.valor_cm} cm</b> <span class="ex-meta">${m.fecha}</span></div><button class="icon-btn dl">🗑️</button>`;
+          it.querySelector('.dl').onclick = () => { if(confirm('¿Eliminar medida?')) onDeleteMeasure(m.id); };
+          histBox.appendChild(it);
+        });
+      };
+      pick.onchange = drawSel;
+      setTimeout(drawSel, 40);
+    }
+
     return wrap;
+  }
+  let mChart;
+  function drawMeasure(measurements, medida){
+    const c=chartColors();
+    const data = Logic.measureSeries(measurements, medida);
+    if(mChart) mChart.destroy();
+    mChart = new Chart(document.getElementById('c-m'), { type:'line',
+      data:{ labels:data.map(d=>d[0].slice(5)), datasets:[{ data:data.map(d=>d[1]), borderColor:c.line, backgroundColor:'transparent', tension:.3, pointRadius:3, fill:false }] },
+      options:baseOpts(c) });
   }
   let wChart;
   function drawWeight(weights, profile){

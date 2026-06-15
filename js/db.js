@@ -110,11 +110,27 @@ const DB = (() => {
     await sb.from('body_weight').delete().eq('id', id).eq('user_id', uid());
   }
 
+  // ---- Measurements (perímetros corporales) ----
+  async function addMeasurement(m) {
+    m.user_id = uid();
+    const { error } = await sb.from('measurements').insert(m);
+    if (error) throw error;
+  }
+  async function getMeasurements() {
+    const { data } = await sb.from('measurements').select('*')
+      .eq('user_id', uid()).order('fecha');
+    return data || [];
+  }
+  async function deleteMeasurement(id) {
+    await sb.from('measurements').delete().eq('id', id).eq('user_id', uid());
+  }
+
   return {
     configured, init, currentUser, signIn, signUp, signOut, onAuth, uid,
     getProfile, saveProfile,
     getExercises, addExercise, updateExercise, deleteExercise, bulkInsertExercises,
     addSets, getSets, getAllSets, deleteSetsByDate,
     addWeight, getWeights, deleteWeight,
+    addMeasurement, getMeasurements, deleteMeasurement,
   };
 })();

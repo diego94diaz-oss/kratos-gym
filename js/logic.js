@@ -143,6 +143,54 @@ const Logic = (() => {
     return { clase:'tag-keep', texto:`${fmt} Mantén tu peso estable.` };
   }
 
+  // ---- Medidas corporales / composición ----
+  // Catálogo de perímetros estándar (clave -> etiqueta)
+  const MEASURE_DEFS = [
+    ['cuello','Cuello'], ['hombros','Hombros'], ['pecho','Pecho'],
+    ['cintura','Cintura'], ['cadera','Cadera'], ['biceps','Bíceps'],
+    ['antebrazo','Antebrazo'], ['muslo','Muslo'], ['pantorrilla','Pantorrilla'],
+  ];
+
+  // Último valor registrado de cada medida -> { medida: {valor_cm, fecha} }
+  function latestMeasures(rows) {
+    const map = {};
+    rows.forEach(m => {
+      const cur = map[m.medida];
+      if (!cur || m.fecha >= cur.fecha) map[m.medida] = { valor_cm: Number(m.valor_cm), fecha: m.fecha };
+    });
+    return map;
+  }
+  // Serie temporal de una medida -> [[fecha, valor], ...] ordenada
+  function measureSeries(rows, medida) {
+    return rows.filter(m => m.medida === medida)
+      .map(m => [m.fecha, Number(m.valor_cm)])
+      .sort((a,b)=> a[0]<b[0]?-1:1);
+  }
+
+  // % graso estimado — fórmula U.S. Navy (cm). sexo: 'h' (def) | 'm'
+  // Requiere cuello + cintura + estatura (+ cadera si mujer).
+  function bodyFatNavy({ sexo='h', cuello, cintura, cadera, estatura_cm }) {
+    if (!estatura_cm || !cuello || !cintura) return null;
+    const log10 = x => Math.log(x) / Math.LN10;
+    let bf;
+    if (sexo === 'm') {
+      if (!cadera) return null;
+      bf = 495 / (1.29579 - 0.35004*log10(cintura + cadera - cuello) + 0.22100*log10(estatura_cm)) - 450;
+    } else {
+      if (cintura - cuello <= 0) return null;
+      bf = 495 / (1.0324 - 0.19077*log10(cintura - cuello) + 0.15456*log10(estatura_cm)) - 450;
+    }
+    if (!isFinite(bf) || bf <= 0 || bf > 70) return null;
+    return +bf.toFixed(1);
+  }
+  // Masa grasa / magra a partir de %graso y peso
+  function composition(bfPct, pesoKg) {
+    if (bfPct == null || !pesoKg) return null;
+    const grasa = +(pesoKg * bfPct/100).toFixed(1);
+    return { grasa, magra: +(pesoKg - grasa).toFixed(1) };
+  }
+
   return { todayISO, nextDay, lastSessionOf, recommend, prsByExercise, newPRs,
-           volumeByDate, weeklyAvg, weeklyTrend, bodyAdvice };
+           volumeByDate, weeklyAvg, weeklyTrend, bodyAdvice,
+           MEASURE_DEFS, latestMeasures, measureSeries, bodyFatNavy, composition };
 })();

@@ -3,7 +3,7 @@
 // ============================================================
 (() => {
   const $ = UI.$;
-  let cache = { exercises:[], sets:[], weights:[], profile:null };
+  let cache = { exercises:[], sets:[], weights:[], measurements:[], profile:null };
   let currentTab = 'hoy';
   let pickedDay = null;
 
@@ -11,7 +11,7 @@
   function applyTheme(t){ document.documentElement.setAttribute('data-theme', t);
     localStorage.setItem('kratos-theme', t);
     $('#theme-btn').textContent = t==='dark' ? '🌙' : '☀️';
-    document.querySelector('meta[name=theme-color]')?.setAttribute('content', t==='dark'?'#0f1115':'#f4f6fa'); }
+    document.querySelector('meta[name=theme-color]')?.setAttribute('content', t==='dark'?'#07080c':'#f3f6fb'); }
   function initTheme(){ applyTheme(localStorage.getItem('kratos-theme') || 'dark'); }
   function toggleTheme(){ applyTheme(document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark'); }
 
@@ -23,6 +23,7 @@
     cache.exercises= await DB.getExercises();
     cache.sets     = await DB.getAllSets();
     cache.weights  = await DB.getWeights();
+    cache.measurements = await DB.getMeasurements();
   }
 
   async function ensureSeed(){
@@ -58,9 +59,11 @@
     } else if (currentTab==='avances') {
       UI.setMain(UI.renderAvances({ sets:cache.sets, exercises:cache.exercises }));
     } else if (currentTab==='peso') {
-      UI.setMain(UI.renderPeso({ weights:cache.weights, profile:cache.profile,
+      UI.setMain(UI.renderPeso({ weights:cache.weights, profile:cache.profile, measurements:cache.measurements,
         onAdd: async w => { await DB.addWeight(w); cache.weights=await DB.getWeights(); render(); UI.toast('Peso guardado'); },
-        onDelete: async id => { await DB.deleteWeight(id); cache.weights=await DB.getWeights(); render(); } }));
+        onDelete: async id => { await DB.deleteWeight(id); cache.weights=await DB.getWeights(); render(); },
+        onAddMeasure: async m => { await DB.addMeasurement(m); cache.measurements=await DB.getMeasurements(); render(); UI.toast('Medida guardada'); },
+        onDeleteMeasure: async id => { await DB.deleteMeasurement(id); cache.measurements=await DB.getMeasurements(); render(); } }));
     } else if (currentTab==='ajustes') {
       UI.setMain(UI.renderAjustes({ profile:cache.profile, email:(DB.currentUserEmail||''),
         onSaveProfile: async p => { await DB.saveProfile({...cache.profile, ...p}); cache.profile=await DB.getProfile(); UI.toast('Perfil guardado'); render(); },
