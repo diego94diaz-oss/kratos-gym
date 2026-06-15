@@ -24,6 +24,8 @@ const DB = (() => {
   async function currentUser() {
     const { data } = await sb.auth.getUser();
     user = data?.user || null;
+    // Offline: getUser falla sin red; cae a la sesión local persistida.
+    if (!user) { const s = await sb.auth.getSession(); user = s.data?.session?.user || null; }
     return user;
   }
   async function signIn(email, pass) {
@@ -76,7 +78,12 @@ const DB = (() => {
   // ---- Workout sets ----
   async function addSets(arr) {
     arr.forEach(s => s.user_id = uid());
-    const { error } = await sb.from('workout_sets').insert(arr);
+    let { error } = await sb.from('workout_sets').insert(arr);
+    // Si la migración de entrenamiento aún no se corrió, reintenta sin los campos nuevos.
+    if (error && /rpe|set_type|rest_s|tempo|column|schema cache/i.test(error.message || '')) {
+      const clean = arr.map(({ rpe, set_type, rest_s, tempo, ...r }) => r);
+      ({ error } = await sb.from('workout_sets').insert(clean));
+    }
     if (error) throw error;
   }
   async function getSets({ from, ejercicio } = {}) {

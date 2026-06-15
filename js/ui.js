@@ -5,7 +5,7 @@ const UI = (() => {
   const $ = (s, r=document) => r.querySelector(s);
   const el = (tag, cls, html) => { const e=document.createElement(tag); if(cls)e.className=cls; if(html!=null)e.innerHTML=html; return e; };
   const esc = s => (s==null?'':String(s)).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  let toastT;
+  let toastT, sessionTimer;
   function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.remove('hidden'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.add('hidden'),2200); }
 
   function setMain(node){ const m=$('#main'); m.innerHTML=''; m.appendChild(node); m.scrollTop=0; }
@@ -21,6 +21,25 @@ const UI = (() => {
       back.onclick = onBack;
       wrap.appendChild(back);
     }
+    // Barra de sesión en vivo (timer + selector de esfuerzo)
+    const effMode = localStorage.getItem('kratos-effort') || 'rir';
+    clearInterval(sessionTimer);
+    const live = el('div','live-head');
+    live.innerHTML = `<div><div class="ttl">Sesión en vivo · Día ${day}</div>
+        <div class="timer" id="sess-timer">00:00</div></div>
+      <div class="effort-toggle">
+        <button data-m="rir" class="${effMode==='rir'?'on':''}">RIR</button>
+        <button data-m="rpe" class="${effMode==='rpe'?'on':''}">RPE</button>
+      </div>`;
+    wrap.appendChild(live);
+    live.querySelectorAll('.effort-toggle button').forEach(b => b.onclick = () => {
+      localStorage.setItem('kratos-effort', b.dataset.m); onChangeDay(day);
+    });
+    const t0 = Date.now();
+    const tick = () => { const elp = document.getElementById('sess-timer'); if(!elp){ clearInterval(sessionTimer); return; }
+      const s = Math.floor((Date.now()-t0)/1000); elp.textContent = `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`; };
+    sessionTimer = setInterval(tick, 1000); tick();
+
     const head = el('div','card');
     head.innerHTML = `<div class="row between">
         <div><div class="section-title" style="margin:0">Sesión de hoy</div>
@@ -34,46 +53,55 @@ const UI = (() => {
 
     if (!dayEx.length) { wrap.appendChild(el('div','empty','No hay ejercicios en este día. Agrégalos en la pestaña Rutina.')); return wrap; }
 
-    const state = {}; // ejId -> [{reps,peso,rir}]
+    const effLbl = effMode === 'rpe' ? 'RPE' : 'RIR';
+    const state = {}; // ejId -> [{reps,peso,effort,type}]
     dayEx.forEach(ex => {
       const rec = Logic.recommend(ex, sets);
       const last = Logic.lastSessionOf(sets, ex.nombre);
       const card = el('div','card ex-card');
       const unidadTxt = ex.unidad==='tiempo'?'seg':ex.unidad==='peso_corporal'?'reps':'kg';
       const repsLbl = ex.unidad==='tiempo'?'seg':'reps';
+      const restS = Logic.restSuggestion(ex);
+      const effDef = effMode==='rpe' ? (ex.rir_obj!=null?Logic.rpeFromRir(ex.rir_obj):'') : (ex.rir_obj ?? '');
       card.innerHTML = `
         <div class="ex-head">
           <div><div class="ex-name">${esc(ex.nombre)}</div>
-          <div class="ex-meta">${ex.series_obj}×${ex.reps_min}-${ex.reps_max} · RIR ${ex.rir_obj ?? '—'} · ${esc(ex.grupo||'')}</div></div>
+          <div class="ex-meta">${ex.series_obj}×${ex.reps_min}-${ex.reps_max} · ${effLbl} ${ex.rir_obj ?? '—'}${effMode==='rpe'?' (RPE '+(ex.rir_obj!=null?10-ex.rir_obj:'—')+')':''} · ${esc(ex.grupo||'')}</div></div>
           <span class="pill ${day==='A'?'a':'b'}">${day}</span>
         </div>
         <div class="rec"><span class="${rec.clase}">${rec.accion.toUpperCase()}</span> · ${esc(rec.texto)}</div>
         ${last?`<div class="ex-meta">Última (${last.fecha}): ${last.sets.map(s=>`${s.reps}×${s.peso_kg}${unidadTxt}`).join(', ')}</div>`:''}
-        <div class="mini-label"><span>#</span><span>${repsLbl}</span><span>${unidadTxt==='reps'?'—':unidadTxt}</span><span>RIR</span><span></span></div>
+        <div class="mini-label"><span>#</span><span>${repsLbl}</span><span>${unidadTxt==='reps'?'—':unidadTxt}</span><span>${effLbl}</span><span>tipo</span><span></span></div>
         <div class="sets"></div>
-        <button class="btn btn-ghost add-set">+ Serie</button>`;
+        <button class="btn btn-ghost add-set">+ Serie</button>
+        <button class="btn btn-ghost rest-btn">⏱️ Descanso ${restS}s</button>`;
       const setsBox = card.querySelector('.sets');
       state[ex.id] = [];
       const prefill = rec.peso!=null ? rec.peso : (last? Math.max(...last.sets.map(s=>s.peso_kg)) : '');
-      const addRow = (reps='', peso=prefill, rir=ex.rir_obj ?? '') => {
+      const typeOpts = Logic.SET_TYPES.map(([v,l,a])=>`<option value="${v}" title="${l}">${a}</option>`).join('');
+      const addRow = (reps='', peso=prefill, eff=effDef, type='normal') => {
         const i = state[ex.id].length;
         const row = el('div','set-row');
         const noWeight = ex.unidad==='peso_corporal' || ex.unidad==='tiempo';
         row.innerHTML = `<span class="sn">${i+1}</span>
           <input type="number" inputmode="numeric" class="i-reps" placeholder="${ex.reps_min}-${ex.reps_max}" value="${reps}">
           <input type="number" inputmode="decimal" class="i-peso" placeholder="${noWeight?'—':'kg'}" value="${noWeight?'':peso}" ${noWeight?'disabled':''}>
-          <input type="number" inputmode="numeric" class="i-rir" placeholder="RIR" value="${rir}">
+          <input type="number" inputmode="numeric" class="i-eff" placeholder="${effLbl}" value="${eff}">
+          <select class="i-type">${typeOpts}</select>
           <button class="del" title="Quitar">✕</button>`;
-        const obj = { reps:'', peso:noWeight?0:peso, rir };
+        const obj = { reps:'', peso:noWeight?0:peso, effort:eff, type };
         state[ex.id].push(obj);
+        row.querySelector('.i-type').value = type;
         row.querySelector('.i-reps').oninput = e => obj.reps = e.target.value;
         row.querySelector('.i-peso').oninput = e => obj.peso = e.target.value;
-        row.querySelector('.i-rir').oninput  = e => obj.rir  = e.target.value;
+        row.querySelector('.i-eff').oninput  = e => obj.effort = e.target.value;
+        row.querySelector('.i-type').onchange = e => obj.type = e.target.value;
         row.querySelector('.del').onclick = () => { const idx=state[ex.id].indexOf(obj); state[ex.id].splice(idx,1); row.remove(); [...setsBox.children].forEach((r,n)=>r.querySelector('.sn').textContent=n+1); };
         setsBox.appendChild(row);
       };
       for (let s=0; s<ex.series_obj; s++) addRow();
       card.querySelector('.add-set').onclick = () => addRow();
+      card.querySelector('.rest-btn').onclick = () => startRest(restS);
       card._ex = ex; card._state = () => state[ex.id];
       wrap.appendChild(card);
     });
@@ -84,18 +112,47 @@ const UI = (() => {
       const rows = [];
       wrap.querySelectorAll('.ex-card').forEach(card => {
         const ex = card._ex;
-        card._state().forEach((s, idx) => {
+        let n = 0;
+        card._state().forEach(s => {
           if (s.reps === '' || s.reps == null) return;
+          n++;
+          let rir, rpe;
+          if (effMode === 'rpe') { rpe = s.effort===''?null:Number(s.effort); rir = Logic.rirFromRpe(s.effort); }
+          else { rir = s.effort===''?null:Number(s.effort); rpe = Logic.rpeFromRir(s.effort); }
           rows.push({ fecha:Logic.todayISO(), rutina:day, ejercicio:ex.nombre, exercise_id:ex.id,
-            serie:idx+1, reps:Number(s.reps), peso_kg:Number(s.peso)||0,
-            rir:s.rir===''?null:Number(s.rir), observaciones:null });
+            serie:n, reps:Number(s.reps), peso_kg:Number(s.peso)||0,
+            rir, rpe, set_type:s.type||'normal', observaciones:null });
         });
       });
       if (!rows.length) return toast('Registra al menos una serie');
+      clearInterval(sessionTimer);
       onSave(rows);
     };
     wrap.appendChild(saveBtn);
     return wrap;
+  }
+
+  // Cronómetro de descanso (overlay global con vibración/beep al terminar)
+  let restInt;
+  function startRest(seconds){
+    clearInterval(restInt);
+    document.querySelector('.rest-ov')?.remove();
+    const total = seconds; let left = seconds;
+    const ov = el('div','rest-ov');
+    ov.innerHTML = `<span class="t">${left}s</span>
+      <div class="bar2"><i style="width:100%"></i></div>
+      <button class="r-add">+15s</button><button class="r-skip">Saltar</button>`;
+    document.body.appendChild(ov);
+    const tEl = ov.querySelector('.t'), bar = ov.querySelector('i');
+    const upd = () => { tEl.textContent = left+'s'; bar.style.width = Math.max(0, left/total*100)+'%'; };
+    const done = () => { clearInterval(restInt); ov.remove();
+      if (navigator.vibrate) navigator.vibrate([200,80,200]);
+      try { const a=new (window.AudioContext||window.webkitAudioContext)(); const o=a.createOscillator(); const g=a.createGain();
+        o.connect(g); g.connect(a.destination); o.frequency.value=880; o.start(); g.gain.setValueAtTime(.2,a.currentTime); g.gain.exponentialRampToValueAtTime(.001,a.currentTime+.5); o.stop(a.currentTime+.5); } catch{} };
+    restInt = setInterval(() => { left--; if(left<=0){ done(); } else upd(); }, 1000);
+    ov.querySelector('.r-skip').onclick = () => { clearInterval(restInt); ov.remove(); };
+    ov.querySelector('.r-add').onclick = () => { left+=15; upd(); };
+    upd();
   }
 
   // ---------- DASHBOARD (Hoy) ----------

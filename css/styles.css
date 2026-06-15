@@ -163,11 +163,35 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .ex-name { font-weight: 750; font-size: 1.06rem; letter-spacing: -0.02em; }
 .ex-meta { font-size: 12px; color: var(--muted); }
 .rec { font-size: 13px; padding: 9px 11px; border-radius: 10px; background: var(--grad-soft); border: 1px solid var(--line); margin: 9px 0; }
-.set-row { display: grid; grid-template-columns: 26px 1fr 1fr 1fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
+.set-row { display: grid; grid-template-columns: 22px 1fr 1fr .85fr .95fr 24px; gap: 5px; align-items: center; margin-bottom: 6px; }
 .set-row .sn { color: var(--muted); font-size: 13px; text-align: center; font-weight: 600; }
-.set-row input { padding: 10px 8px; text-align: center; }
-.set-row .del { background: none; border: none; color: var(--danger); font-size: 18px; cursor: pointer; }
-.mini-label { display: grid; grid-template-columns: 26px 1fr 1fr 1fr auto; gap: 6px; font-size: 11px; color: var(--muted); margin-bottom: 4px; padding: 0 2px; font-weight: 600; }
+.set-row input { padding: 10px 6px; text-align: center; }
+.set-row select { padding: 9px 4px; font-size: 13px; text-align: center; }
+.set-row .del { background: none; border: none; color: var(--danger); font-size: 17px; cursor: pointer; padding: 0; }
+.mini-label { display: grid; grid-template-columns: 22px 1fr 1fr .85fr .95fr 24px; gap: 5px; font-size: 10px; color: var(--muted); margin-bottom: 4px; padding: 0 2px; font-weight: 600; text-align: center; }
+
+/* ===== Sesión en vivo ===== */
+.live-head {
+  position: sticky; top: 56px; z-index: 9; display: flex; align-items: center; justify-content: space-between;
+  background: var(--grad-soft); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin-bottom: 12px;
+}
+.live-head .timer { font-size: 1.2rem; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.live-head .ttl { font-size: 12px; color: var(--muted); font-weight: 600; }
+.effort-toggle { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.effort-toggle button { background: var(--card-2); border: none; color: var(--muted); padding: 6px 12px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.effort-toggle button.on { background: var(--grad); color: #04201d; }
+.rest-btn { width: 100%; margin-top: 4px; }
+
+/* Overlay de descanso */
+.rest-ov {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+  background: var(--card); border-top: 1px solid var(--line); box-shadow: var(--shadow), var(--glow);
+  padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 12px;
+}
+.rest-ov .t { font-size: 1.7rem; font-weight: 850; font-variant-numeric: tabular-nums; min-width: 64px; }
+.rest-ov .bar2 { flex: 1; height: 8px; background: var(--card-2); border-radius: 999px; overflow: hidden; }
+.rest-ov .bar2 > i { display: block; height: 100%; background: var(--grad); transition: width 1s linear; }
+.rest-ov button { background: var(--card-2); border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 8px 12px; font-weight: 700; cursor: pointer; }
 .add-set { width: 100%; margin-top: 4px; }
 
 .list-item { display: flex; justify-content: space-between; padding: 11px 0; border-bottom: 1px solid var(--line); }

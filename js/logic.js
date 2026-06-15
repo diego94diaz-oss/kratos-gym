@@ -30,8 +30,10 @@ const Logic = (() => {
       return { accion:'inicio', peso:null, clase:'tag-keep',
         texto:`Primera vez. Calibra con RIR ${ex.rir_obj ?? 2}-3 en ${ex.reps_min}-${ex.reps_max} reps.` };
     }
-    const work = last.sets.filter(s => s.peso_kg > 0);
-    const ref = work.length ? work : last.sets;
+    const eff = last.sets.filter(s => s.set_type !== 'calentamiento');
+    const base = eff.length ? eff : last.sets;
+    const work = base.filter(s => s.peso_kg > 0);
+    const ref = work.length ? work : base;
     const maxPeso = Math.max(...ref.map(s => s.peso_kg));
     const topSets = ref.filter(s => s.peso_kg === maxPeso);
     const allHitTop = topSets.every(s => s.reps >= ex.reps_max);
@@ -68,7 +70,7 @@ const Logic = (() => {
   function prsByExercise(sets) {
     const map = {};
     sets.forEach(s => {
-      if (s.peso_kg <= 0) return;
+      if (s.peso_kg <= 0 || s.set_type === 'calentamiento') return;
       const e1rm = s.peso_kg * (1 + s.reps / 30);
       const cur = map[s.ejercicio];
       if (!cur || e1rm > cur.e1rm) map[s.ejercicio] = { peso:s.peso_kg, reps:s.reps, fecha:s.fecha, e1rm };
@@ -82,7 +84,7 @@ const Logic = (() => {
     const out = [];
     const byEx = {};
     newRows.forEach(r => {
-      if (r.peso_kg <= 0) return;
+      if (r.peso_kg <= 0 || r.set_type === 'calentamiento') return;
       const e1rm = r.peso_kg * (1 + r.reps / 30);
       if (!byEx[r.ejercicio] || e1rm > byEx[r.ejercicio].e1rm)
         byEx[r.ejercicio] = { peso:r.peso_kg, reps:r.reps, e1rm };
@@ -96,7 +98,7 @@ const Logic = (() => {
   // Volumen total (kg) por sesión/fecha
   function volumeByDate(sets) {
     const map = {};
-    sets.forEach(s => { map[s.fecha] = (map[s.fecha]||0) + s.peso_kg * s.reps; });
+    sets.forEach(s => { if (s.set_type === 'calentamiento') return; map[s.fecha] = (map[s.fecha]||0) + s.peso_kg * s.reps; });
     return Object.entries(map).sort().map(([fecha, vol]) => ({ fecha, vol: Math.round(vol) }));
   }
 
@@ -256,8 +258,22 @@ const Logic = (() => {
     }), { kcal:0, prot:0, grasa:0, carbo:0 });
   }
 
+  // ---- Tipos de serie / esfuerzo / descanso ----
+  // [valor, etiqueta, abreviatura]
+  const SET_TYPES = [['normal','Normal','N'],['calentamiento','Calentamiento','C'],['drop','Drop set','D'],['fallo','Al fallo','F']];
+  function rirFromRpe(rpe){ return (rpe==null||rpe==='') ? null : +(10 - Number(rpe)).toFixed(1); }
+  function rpeFromRir(rir){ return (rir==null||rir==='') ? null : +(10 - Number(rir)).toFixed(1); }
+  // Descanso sugerido (s): compuestos ~150, aislados ~90
+  function restSuggestion(ex){
+    if(!ex) return 90;
+    const txt = ((ex.grupo||'') + ' ' + (ex.nombre||'')).toLowerCase();
+    const compound = ex.unidad==='barra' || /pierna|espalda|pecho|sentadilla|peso muerto|dominad|press|remo|hip thrust/.test(txt);
+    return compound ? 150 : 90;
+  }
+
   return { todayISO, nextDay, lastSessionOf, recommend, prsByExercise, newPRs,
            volumeByDate, weeklyAvg, weeklyTrend, bodyAdvice,
            MEASURE_DEFS, latestMeasures, measureSeries, bodyFatNavy, composition,
-           MEALS, ACTIVITY, bmrMifflin, nutritionTargets, effectiveTargets, macrosFor, sumFoods };
+           MEALS, ACTIVITY, bmrMifflin, nutritionTargets, effectiveTargets, macrosFor, sumFoods,
+           SET_TYPES, rirFromRpe, rpeFromRir, restSuggestion };
 })();

@@ -10,6 +10,30 @@
   let nutriDate = null;
   const lastWeightKg = () => cache.weights.length ? Number(cache.weights[cache.weights.length-1].peso_kg) : null;
 
+  // ---------- Wake lock (pantalla activa al entrenar) ----------
+  let wakeLock = null;
+  async function reqWake(){ try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch {} }
+  async function relWake(){ try { await wakeLock?.release(); } catch {} wakeLock = null; }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState==='visible' && trainingMode) reqWake(); });
+
+  // ---------- Escritura con respaldo offline ----------
+  // Intenta el insert online; si falla por falta de red, encola y aplica localmente.
+  // Devuelve true si fue online, false si quedó offline (encolado).
+  async function tryWrite(kind, dbCall, payload, applyLocal){
+    try { await dbCall(); return true; }
+    catch (e) {
+      if (Offline.isOfflineError(e)) {
+        Offline.enqueue({ kind, payload });
+        applyLocal && applyLocal();
+        Offline.saveCache(cache);
+        UI.toast('📴 Guardado offline · se sincroniza al reconectar');
+        return false;
+      }
+      UI.toast('Error: ' + (e.message || 'no se pudo guardar'));
+      throw e;
+    }
+  }
+
   // ---------- Tema ----------
   function applyTheme(t){ document.documentElement.setAttribute('data-theme', t);
     localStorage.setItem('kratos-theme', t);
@@ -58,11 +82,11 @@
         UI.setMain(UI.renderHoy({ day, exercises:cache.exercises, sets:cache.sets,
           onChangeDay: d => { pickedDay=d; render(); },
           onSave: saveSession,
-          onBack: () => { trainingMode=false; render(); } }));
+          onBack: () => { trainingMode=false; relWake(); render(); } }));
       } else {
         UI.setMain(UI.renderDashboard({ profile:cache.profile, exercises:cache.exercises, sets:cache.sets,
           weights:cache.weights, measurements:cache.measurements, foodLogs:cache.foodLogs, lastWeight:lastWeightKg(), day,
-          onTrain: () => { trainingMode=true; render(); },
+          onTrain: () => { trainingMode=true; reqWake(); render(); },
           onGo: tab => setTab(tab) }));
       }
     } else if (currentTab==='rutina') {
@@ -74,10 +98,14 @@
       UI.setMain(UI.renderAvances({ sets:cache.sets, exercises:cache.exercises }));
     } else if (currentTab==='peso') {
       UI.setMain(UI.renderPeso({ weights:cache.weights, profile:cache.profile, measurements:cache.measurements, photos:cache.photos,
-        onAdd: async w => { await DB.addWeight(w); cache.weights=await DB.getWeights(); render(); UI.toast('Peso guardado'); },
-        onDelete: async id => { await DB.deleteWeight(id); cache.weights=await DB.getWeights(); render(); },
-        onAddMeasure: async m => { await DB.addMeasurement(m); cache.measurements=await DB.getMeasurements(); render(); UI.toast('Medida guardada'); },
-        onDeleteMeasure: async id => { await DB.deleteMeasurement(id); cache.measurements=await DB.getMeasurements(); render(); },
+        onAdd: async w => { const ok = await tryWrite('weight', ()=>DB.addWeight(w), w,
+            ()=>{ cache.weights=[...cache.weights.filter(x=>x.fecha!==w.fecha), {...w}].sort((a,b)=>a.fecha<b.fecha?-1:1); });
+          if(ok){ cache.weights=await DB.getWeights(); Offline.saveCache(cache); UI.toast('Peso guardado'); } render(); },
+        onDelete: async id => { await DB.deleteWeight(id); cache.weights=await DB.getWeights(); Offline.saveCache(cache); render(); },
+        onAddMeasure: async m => { const ok = await tryWrite('measure', ()=>DB.addMeasurement(m), m,
+            ()=>{ cache.measurements=[...cache.measurements, {...m}]; });
+          if(ok){ cache.measurements=await DB.getMeasurements(); Offline.saveCache(cache); UI.toast('Medida guardada'); } render(); },
+        onDeleteMeasure: async id => { await DB.deleteMeasurement(id); cache.measurements=await DB.getMeasurements(); Offline.saveCache(cache); render(); },
         onAddPhoto: async (f, pose, fecha) => { try { UI.toast('Subiendo foto...'); await DB.uploadPhoto(f, pose, fecha); cache.photos=await DB.getPhotos(); render(); UI.toast('Foto guardada'); } catch(e){ UI.toast('Error al subir: '+(e.message||'')); } },
         onDeletePhoto: async (id, path) => { await DB.deletePhoto(id, path); cache.photos=await DB.getPhotos(); render(); } }));
     } else if (currentTab==='nutricion') {
@@ -85,8 +113,10 @@
       UI.setMain(UI.renderNutricion({ logs:cache.foodLogs, profile:cache.profile, lastWeight:lastWeightKg(), date:nutriDate,
         onChangeDate: d => { nutriDate=d; render(); },
         onSearch: term => DB.searchFoods(term),
-        onLog: async l => { await DB.addFoodLog(l); cache.foodLogs=await DB.getFoodLogs(); render(); UI.toast('Registrado'); },
-        onDeleteLog: async id => { await DB.deleteFoodLog(id); cache.foodLogs=await DB.getFoodLogs(); render(); } }));
+        onLog: async l => { const ok = await tryWrite('food', ()=>DB.addFoodLog(l), l,
+            ()=>{ cache.foodLogs=[...cache.foodLogs, {...l}]; });
+          if(ok){ cache.foodLogs=await DB.getFoodLogs(); Offline.saveCache(cache); UI.toast('Registrado'); } render(); },
+        onDeleteLog: async id => { await DB.deleteFoodLog(id); cache.foodLogs=await DB.getFoodLogs(); Offline.saveCache(cache); render(); } }));
     } else if (currentTab==='ajustes') {
       UI.setMain(UI.renderAjustes({ profile:cache.profile, email:(DB.currentUserEmail||''), lastWeight:lastWeightKg(),
         onSaveProfile: async p => { await DB.saveProfile({...cache.profile, ...p}); cache.profile=await DB.getProfile(); UI.toast('Perfil guardado'); render(); },
@@ -105,12 +135,12 @@
 
   async function saveSession(rows){
     const prs = Logic.newPRs(cache.sets, rows);
-    await DB.addSets(rows);
-    cache.sets = await DB.getAllSets();
+    const ok = await tryWrite('sets', ()=>DB.addSets(rows), rows,
+      ()=>{ cache.sets = cache.sets.concat(rows.map(r=>({...r}))); });
+    if (ok) { cache.sets = await DB.getAllSets(); Offline.saveCache(cache); }
     pickedDay = null; // próxima vez alterna
-    trainingMode = false;
-    if (prs.length) UI.toast('🏆 ¡Nuevo PR en ' + prs[0].ejercicio + '!');
-    else UI.toast('💪 Sesión guardada');
+    trainingMode = false; relWake();
+    if (ok) UI.toast(prs.length ? '🏆 ¡Nuevo PR en ' + prs[0].ejercicio + '!' : '💪 Sesión guardada');
     setTab('avances');
   }
 
@@ -178,8 +208,17 @@
     DB.currentUserEmail = email;
     show('app-view');
     UI.setMain(UI.el('div','empty','Cargando...'));
-    await loadAll();
-    await ensureSeed();
+    try {
+      await loadAll();
+      Offline.saveCache(cache);
+      try { await ensureSeed(); } catch {}
+      if (navigator.onLine && Offline.pending()) { const n = await Offline.flush(DB); if(n){ await loadAll(); Offline.saveCache(cache); } }
+    } catch (e) {
+      // Sin conexión: hidrata desde la caché local para seguir usable.
+      const c = Offline.loadCache();
+      if (c) { Object.assign(cache, c); UI.toast('📴 Modo offline · datos guardados'); }
+      else { UI.setMain(UI.el('div','empty','Sin conexión y sin datos en caché. Conéctate para cargar.')); return; }
+    }
     setTab('hoy');
   }
 
@@ -187,7 +226,15 @@
   async function boot(){
     initTheme();
     $('#theme-btn').onclick = toggleTheme;
-    document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{ if(t.dataset.tab==='hoy'){ pickedDay=null; trainingMode=false; } setTab(t.dataset.tab); });
+    document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{ if(t.dataset.tab==='hoy'){ pickedDay=null; trainingMode=false; relWake(); } setTab(t.dataset.tab); });
+
+    // Sincronización al recuperar conexión
+    window.addEventListener('offline', () => UI.toast('📴 Sin conexión'));
+    window.addEventListener('online', async () => {
+      if (!Offline.pending()) return;
+      const n = await Offline.flush(DB);
+      if (n) { try { await loadAll(); Offline.saveCache(cache); render(); } catch {} UI.toast('✅ Sincronizado (' + n + ')'); }
+    });
 
     if (!DB.configured()){ show('config-view'); return; }
     DB.init();
