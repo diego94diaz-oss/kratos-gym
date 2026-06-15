@@ -6,6 +6,7 @@
   let cache = { exercises:[], sets:[], weights:[], measurements:[], foodLogs:[], photos:[], profile:null };
   let currentTab = 'hoy';
   let pickedDay = null;
+  let trainingMode = false;
   let nutriDate = null;
   const lastWeightKg = () => cache.weights.length ? Number(cache.weights[cache.weights.length-1].peso_kg) : null;
 
@@ -53,9 +54,17 @@
     if (currentTab==='hoy') {
       const day = pickedDay || Logic.nextDay(cache.sets);
       pickedDay = day;
-      UI.setMain(UI.renderHoy({ day, exercises:cache.exercises, sets:cache.sets,
-        onChangeDay: d => { pickedDay=d; render(); },
-        onSave: saveSession }));
+      if (trainingMode) {
+        UI.setMain(UI.renderHoy({ day, exercises:cache.exercises, sets:cache.sets,
+          onChangeDay: d => { pickedDay=d; render(); },
+          onSave: saveSession,
+          onBack: () => { trainingMode=false; render(); } }));
+      } else {
+        UI.setMain(UI.renderDashboard({ profile:cache.profile, exercises:cache.exercises, sets:cache.sets,
+          weights:cache.weights, measurements:cache.measurements, foodLogs:cache.foodLogs, lastWeight:lastWeightKg(), day,
+          onTrain: () => { trainingMode=true; render(); },
+          onGo: tab => setTab(tab) }));
+      }
     } else if (currentTab==='rutina') {
       UI.setMain(UI.renderRutina({ exercises:cache.exercises,
         onAdd: day => UI.setMain(UI.exerciseForm(null, day, onExForm)),
@@ -99,6 +108,7 @@
     await DB.addSets(rows);
     cache.sets = await DB.getAllSets();
     pickedDay = null; // próxima vez alterna
+    trainingMode = false;
     if (prs.length) UI.toast('🏆 ¡Nuevo PR en ' + prs[0].ejercicio + '!');
     else UI.toast('💪 Sesión guardada');
     setTab('avances');
@@ -177,7 +187,7 @@
   async function boot(){
     initTheme();
     $('#theme-btn').onclick = toggleTheme;
-    document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{ if(t.dataset.tab==='hoy') pickedDay=null; setTab(t.dataset.tab); });
+    document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{ if(t.dataset.tab==='hoy'){ pickedDay=null; trainingMode=false; } setTab(t.dataset.tab); });
 
     if (!DB.configured()){ show('config-view'); return; }
     DB.init();

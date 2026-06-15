@@ -10,11 +10,17 @@ const UI = (() => {
 
   function setMain(node){ const m=$('#main'); m.innerHTML=''; m.appendChild(node); m.scrollTop=0; }
 
-  // ---------- HOY (registrar sesión) ----------
-  function renderHoy({ day, exercises, sets, onSave, onChangeDay }) {
+  // ---------- SESIÓN (registrar entrenamiento) ----------
+  function renderHoy({ day, exercises, sets, onSave, onChangeDay, onBack }) {
     const wrap = el('div');
     const dayEx = exercises.filter(e => e.dia === day && e.activo !== false)
                            .sort((a,b)=>a.orden-b.orden);
+    if (onBack) {
+      const back = el('button','btn btn-ghost','← Volver al inicio');
+      back.style.marginBottom = '12px';
+      back.onclick = onBack;
+      wrap.appendChild(back);
+    }
     const head = el('div','card');
     head.innerHTML = `<div class="row between">
         <div><div class="section-title" style="margin:0">Sesión de hoy</div>
@@ -89,6 +95,96 @@ const UI = (() => {
       onSave(rows);
     };
     wrap.appendChild(saveBtn);
+    return wrap;
+  }
+
+  // ---------- DASHBOARD (Hoy) ----------
+  function renderDashboard({ profile, exercises, sets, weights, measurements, foodLogs, lastWeight, day, onTrain, onGo }) {
+    const wrap = el('div');
+    const today = Logic.todayISO();
+
+    // --- Saludo ---
+    const h = new Date().getHours();
+    const saludo = h < 12 ? 'Buenos días' : h < 20 ? 'Buenas tardes' : 'Buenas noches';
+    const head = el('div');
+    head.innerHTML = `<div class="section-title" style="margin:2px 2px 4px">${today}</div>
+      <div style="font-size:1.5rem;font-weight:850;letter-spacing:-.03em;margin:0 2px 14px">${saludo} 💪</div>`;
+    wrap.appendChild(head);
+
+    // --- Entrenamiento de hoy ---
+    const dayEx = exercises.filter(e => e.dia === day && e.activo !== false);
+    const todaySets = sets.filter(s => s.fecha === today);
+    const trained = todaySets.length > 0;
+    const trCard = el('div','card');
+    trCard.style.borderLeft = '3px solid var(--primary)';
+    if (trained) {
+      const exDone = new Set(todaySets.map(s => s.ejercicio)).size;
+      const vol = Math.round(todaySets.reduce((a,s)=>a + (s.peso_kg*s.reps||0), 0));
+      trCard.innerHTML = `<div class="row between"><h3 style="margin:0">✅ Entrenaste hoy</h3><span class="pill ${todaySets[0].rutina==='A'?'a':'b'}">Día ${todaySets[0].rutina||day}</span></div>
+        <div class="ex-meta" style="margin-top:8px">${exDone} ejercicios · ${todaySets.length} series · ${vol} kg de volumen</div>`;
+    } else {
+      trCard.innerHTML = `<div class="row between"><h3 style="margin:0">Entrenamiento de hoy</h3><span class="pill ${day==='A'?'a':'b'}">Día ${day}</span></div>
+        <div class="ex-meta" style="margin-top:8px">${dayEx.length} ejercicios sugeridos${dayEx.length?` · ${esc(dayEx.slice(0,3).map(e=>e.nombre).join(', '))}${dayEx.length>3?'…':''}`:''}</div>`;
+    }
+    const trBtn = el('button','btn btn-primary', trained ? '✏️ Ver / continuar sesión' : `🏋️ Entrenar día ${day}`);
+    trBtn.style.cssText = 'width:100%;margin-top:12px;padding:14px';
+    trBtn.onclick = onTrain;
+    trCard.appendChild(trBtn);
+    wrap.appendChild(trCard);
+
+    // --- Nutrición de hoy ---
+    const t = Logic.effectiveTargets(profile, lastWeight);
+    const sum = Logic.sumFoods(foodLogs.filter(l => l.fecha === today));
+    const nCard = el('div','card');
+    const kcalPct = t.kcal ? Math.min(100, Math.round(sum.kcal/t.kcal*100)) : 0;
+    const rest = t.kcal ? Math.round(t.kcal - sum.kcal) : null;
+    nCard.innerHTML = `<div class="row between"><h3 style="margin:0">🍽️ Nutrición</h3><span class="btn-link">Ver →</span></div>
+      <div class="kcal-ring" style="padding:8px 0 2px"><div class="big">${Math.round(sum.kcal)}</div>
+        <div class="label">${t.kcal?`de ${t.kcal} kcal · ${rest>=0?`quedan ${rest}`:`+${-rest} pasado`}`:'sin objetivo (configúralo en Ajustes)'}</div></div>
+      <div class="bar ${t.kcal&&sum.kcal>t.kcal*1.05?'over':''}" style="margin:6px 0 12px"><i style="width:${kcalPct}%"></i></div>
+      ${macroBar('Proteína', sum.prot, t.prot)}
+      ${macroBar('Grasa', sum.grasa, t.grasa)}
+      ${macroBar('Carbohidratos', sum.carbo, t.carbo)}`;
+    nCard.onclick = () => onGo('nutricion');
+    nCard.style.cursor = 'pointer';
+    wrap.appendChild(nCard);
+
+    // --- Cuerpo ---
+    const avg = Logic.weeklyAvg(weights);
+    const trend = Logic.weeklyTrend(weights);
+    const last = weights.length ? weights[weights.length-1] : null;
+    const latest = Logic.latestMeasures(measurements || []);
+    const bf = Logic.bodyFatNavy({ sexo: profile?.sexo || 'h', cuello: latest.cuello?.valor_cm,
+      cintura: latest.cintura?.valor_cm, cadera: latest.cadera?.valor_cm, estatura_cm: profile?.estatura_cm });
+    const cCard = el('div','card');
+    cCard.innerHTML = `<div class="row between"><h3 style="margin:0">⚖️ Cuerpo</h3><span class="btn-link">Ver →</span></div>
+      <div class="grid3" style="margin-top:8px">
+        <div class="stat"><div class="big" style="font-size:1.6rem">${last?last.peso_kg:'—'}</div><div class="label">Peso (kg)</div></div>
+        <div class="stat"><div class="big" style="font-size:1.6rem">${trend!=null?(trend>0?'+':'')+trend:'—'}</div><div class="label">kg/sem</div></div>
+        <div class="stat"><div class="big" style="font-size:1.6rem">${bf!=null?bf+'%':'—'}</div><div class="label">Grasa est.</div></div>
+      </div>`;
+    cCard.onclick = () => onGo('peso');
+    cCard.style.cursor = 'pointer';
+    wrap.appendChild(cCard);
+
+    // --- Resumen de entrenamiento ---
+    if (sets.length) {
+      const since = new Date(Date.now() - 7*86400000).toISOString().slice(0,10);
+      const weekSessions = new Set(sets.filter(s=>s.fecha>=since).map(s=>s.fecha)).size;
+      const totalSessions = new Set(sets.map(s=>s.fecha)).size;
+      const prs = Logic.prsByExercise(sets);
+      const sCard = el('div','card');
+      sCard.innerHTML = `<div class="row between"><h3 style="margin:0">📈 Progreso</h3><span class="btn-link">Ver →</span></div>
+        <div class="grid3" style="margin-top:8px">
+          <div class="stat"><div class="big" style="font-size:1.6rem">${weekSessions}</div><div class="label">Esta semana</div></div>
+          <div class="stat"><div class="big" style="font-size:1.6rem">${totalSessions}</div><div class="label">Sesiones</div></div>
+          <div class="stat"><div class="big" style="font-size:1.6rem">${Object.keys(prs).length}</div><div class="label">PRs</div></div>
+        </div>`;
+      sCard.onclick = () => onGo('avances');
+      sCard.style.cursor = 'pointer';
+      wrap.appendChild(sCard);
+    }
+
     return wrap;
   }
 
@@ -652,6 +748,6 @@ const UI = (() => {
     return wrap;
   }
 
-  return { $, el, esc, toast, setMain, renderHoy, renderRutina, exerciseForm,
+  return { $, el, esc, toast, setMain, renderDashboard, renderHoy, renderRutina, exerciseForm,
            renderAvances, renderPeso, renderNutricion, renderAjustes };
 })();

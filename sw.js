@@ -1,5 +1,5 @@
 // Service worker — network-first para que las actualizaciones lleguen siempre.
-const CACHE = 'kratos-gym-v5';
+const CACHE = 'kratos-gym-v6';
 const ASSETS = [
   './', './index.html', './css/styles.css',
   './js/db.js', './js/seed.js', './js/logic.js', './js/ui.js', './js/app.js',
