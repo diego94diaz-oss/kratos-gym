@@ -234,6 +234,17 @@ const DB = (() => {
   async function updateGoal(id, patch){ await sb.from('goals').update(patch).eq('id', id).eq('user_id', uid()); }
   async function deleteGoal(id){ await sb.from('goals').delete().eq('id', id).eq('user_id', uid()); }
 
+  // ---- Push ----
+  async function savePushSub(sub){
+    const k = sub.toJSON();
+    const { error } = await sb.from('push_subscriptions').upsert(
+      { user_id:uid(), endpoint:k.endpoint, p256dh:k.keys.p256dh, auth:k.keys.auth },
+      { onConflict:'user_id,endpoint' });
+    if (error) throw error;
+  }
+  async function deletePushSub(endpoint){ await sb.from('push_subscriptions').delete().eq('user_id', uid()).eq('endpoint', endpoint); }
+  async function saveReminders(reminders){ const { error } = await sb.from('profile').update({ reminders }).eq('user_id', uid()); if(error) throw error; }
+
   return {
     configured, init, currentUser, signIn, signUp, signOut, onAuth, uid,
     getProfile, saveProfile,
@@ -247,5 +258,6 @@ const DB = (() => {
     getHabits, addHabit, deleteHabit, getHabitLogs, setHabitLog,
     getInjuries, addInjury, updateInjury, deleteInjury,
     getGoals, addGoal, updateGoal, deleteGoal,
+    savePushSub, deletePushSub, saveReminders,
   };
 })();

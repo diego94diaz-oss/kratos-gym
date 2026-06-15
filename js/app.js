@@ -152,6 +152,10 @@
       UI.setMain(UI.renderAjustes({ profile:cache.profile, email:(DB.currentUserEmail||''), lastWeight:lastWeightKg(),
         onSaveProfile: async p => { await DB.saveProfile({...cache.profile, ...p}); cache.profile=await DB.getProfile(); UI.toast('Perfil guardado'); render(); },
         onExport: exportCSV, onImport: importCSV,
+        onPushEnable: async () => { try { await Push.enable(); UI.toast('🔔 Notificaciones activadas'); } catch(e){ UI.toast(e.message||'Error'); } render(); },
+        onPushDisable: async () => { try { await Push.disable(); UI.toast('Notificaciones desactivadas'); } catch(e){ UI.toast(e.message||'Error'); } render(); },
+        onPushTest: async () => { try { await Push.test(); } catch(e){ UI.toast(e.message||'Error'); } },
+        onSaveReminders: async r => { try { await DB.saveReminders(r); cache.profile=await DB.getProfile(); Offline.saveCache(cache); UI.toast('Recordatorios guardados'); } catch(e){ UI.toast(e.message||'Error'); } },
         onSignOut: async () => { await DB.signOut(); location.reload(); } }));
     }
   }

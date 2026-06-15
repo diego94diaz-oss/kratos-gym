@@ -919,7 +919,8 @@ const UI = (() => {
   }
 
   // ---------- AJUSTES ----------
-  function renderAjustes({ profile, email, lastWeight, onSaveProfile, onExport, onImport, onSignOut }) {
+  function renderAjustes({ profile, email, lastWeight, onSaveProfile, onExport, onImport, onSignOut,
+                           onPushEnable, onPushDisable, onPushTest, onSaveReminders }) {
     const wrap = el('div');
     const p = profile || {};
     const card = el('div','card');
@@ -994,6 +995,44 @@ const UI = (() => {
     sync.querySelector('#exp-peso').onclick = () => onExport('peso');
     sync.querySelector('#imp-file').onchange = e => { if(e.target.files[0]) onImport(e.target.files[0]); };
     wrap.appendChild(sync);
+
+    // --- Notificaciones ---
+    const rem = (profile && profile.reminders) || {};
+    const notif = el('div','card');
+    notif.innerHTML = `<h3>🔔 Notificaciones</h3>
+      <p class="help" id="nz-status">Comprobando…</p>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" id="nz-on">Activar</button>
+        <button class="btn btn-ghost" id="nz-test">Probar</button>
+        <button class="btn btn-ghost" id="nz-off">Desactivar</button>
+      </div>
+      <div class="divider"></div>
+      <div class="section-title" style="margin-top:0">Recordatorios diarios</div>
+      <div class="row between" style="margin:6px 0"><label><input type="checkbox" id="rm-ent" ${rem.entrenar?.on?'checked':''}> 🏋️ Entrenar</label>
+        <input type="time" id="rm-ent-h" value="${rem.entrenar?.hora||'18:00'}" class="day-sel" style="padding:6px 8px"></div>
+      <div class="row between" style="margin:6px 0"><label><input type="checkbox" id="rm-pes" ${rem.pesarse?.on?'checked':''}> ⚖️ Pesarse</label>
+        <input type="time" id="rm-pes-h" value="${rem.pesarse?.hora||'08:00'}" class="day-sel" style="padding:6px 8px"></div>
+      <div class="row between" style="margin:6px 0"><label><input type="checkbox" id="rm-agua" ${rem.agua?.on?'checked':''}> 💧 Hidratación (tarde)</label></div>
+      <button class="btn btn-primary" id="nz-save" style="width:100%;margin-top:10px">Guardar recordatorios</button>
+      <p class="help">Los recordatorios programados requieren que la app esté instalada y la Edge Function desplegada (ver db/push-setup.md).</p>`;
+    const statusEl = notif.querySelector('#nz-status');
+    if (!onPushEnable) statusEl.textContent = 'No disponible.';
+    else (async () => {
+      try {
+        if (!window.Push || !Push.supported()) { statusEl.textContent = 'Tu dispositivo no soporta notificaciones push.'; return; }
+        const sub = await Push.isSubscribed();
+        statusEl.textContent = sub ? '✅ Activadas en este dispositivo.' : 'Permiso: ' + Push.permission() + '. Pulsa Activar.';
+      } catch { statusEl.textContent = ''; }
+    })();
+    notif.querySelector('#nz-on').onclick = () => onPushEnable && onPushEnable();
+    notif.querySelector('#nz-off').onclick = () => onPushDisable && onPushDisable();
+    notif.querySelector('#nz-test').onclick = () => onPushTest && onPushTest();
+    notif.querySelector('#nz-save').onclick = () => onSaveReminders && onSaveReminders({
+      entrenar: { on: notif.querySelector('#rm-ent').checked, hora: notif.querySelector('#rm-ent-h').value },
+      pesarse:  { on: notif.querySelector('#rm-pes').checked, hora: notif.querySelector('#rm-pes-h').value },
+      agua:     { on: notif.querySelector('#rm-agua').checked },
+    });
+    wrap.appendChild(notif);
 
     const acc = el('div','card');
     acc.innerHTML = `<h3>Cuenta</h3><p class="muted">${esc(email||'')}</p>

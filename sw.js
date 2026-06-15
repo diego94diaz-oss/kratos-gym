@@ -1,8 +1,8 @@
 // Service worker — network-first para que las actualizaciones lleguen siempre.
-const CACHE = 'kratos-gym-v9';
+const CACHE = 'kratos-gym-v10';
 const ASSETS = [
   './', './index.html', './css/styles.css',
-  './js/db.js', './js/offline.js', './js/seed.js', './js/logic.js', './js/ui.js', './js/app.js',
+  './js/db.js', './js/offline.js', './js/push.js', './js/seed.js', './js/logic.js', './js/ui.js', './js/app.js',
   './manifest.json', './assets/icon.svg'
 ];
 self.addEventListener('install', e => {
@@ -13,6 +13,24 @@ self.addEventListener('activate', e => {
     .then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
+// ---- Web Push ----
+self.addEventListener('push', e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch { d = { title: 'Kratos Gym', body: e.data && e.data.text() }; }
+  e.waitUntil(self.registration.showNotification(d.title || 'Kratos Gym 💪', {
+    body: d.body || '', icon: 'assets/icon-192.png', badge: 'assets/icon-192.png',
+    tag: d.tag, data: { url: d.url || './' }, vibrate: [120, 60, 120]
+  }));
+});
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || './';
+  e.waitUntil(self.clients.matchAll({ type: 'window' }).then(cs => {
+    for (const c of cs) { if ('focus' in c) return c.focus(); }
+    return self.clients.openWindow(url);
+  }));
+});
+
 self.addEventListener('fetch', e => {
   const url = e.request.url;
   if (url.includes('supabase') || e.request.method !== 'GET') return;
