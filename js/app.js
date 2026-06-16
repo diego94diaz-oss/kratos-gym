@@ -4,7 +4,8 @@
 (() => {
   const $ = UI.$;
   let cache = { exercises:[], sets:[], weights:[], measurements:[], foodLogs:[], photos:[],
-                sleep:[], wellness:[], habits:[], habitLogs:[], injuries:[], goals:[], cardio:[], rehab:[], profile:null };
+                sleep:[], wellness:[], habits:[], habitLogs:[], injuries:[], goals:[], cardio:[], rehab:[],
+                recipes:[], supplements:[], supplementLogs:[], mesocycles:[], profile:null };
   let currentTab = 'hoy';
   let pickedDay = null;
   let trainingMode = false;
@@ -64,6 +65,10 @@
     try { cache.goals     = await DB.getGoals();     } catch { cache.goals = []; }
     try { cache.cardio    = await DB.getCardio();    } catch { cache.cardio = []; }
     try { cache.rehab     = await DB.getRehab();     } catch { cache.rehab = []; }
+    try { cache.recipes        = await DB.getRecipes();        } catch { cache.recipes = []; }
+    try { cache.supplements    = await DB.getSupplements();    } catch { cache.supplements = []; }
+    try { cache.supplementLogs = await DB.getSupplementLogs(); } catch { cache.supplementLogs = []; }
+    try { cache.mesocycles     = await DB.getMesocycles();     } catch { cache.mesocycles = []; }
   }
 
   async function ensureSeed(){
@@ -101,11 +106,13 @@
           onGo: tab => setTab(tab) }));
       }
     } else if (currentTab==='rutina') {
-      UI.setMain(UI.renderRutina({ exercises:cache.exercises,
+      UI.setMain(UI.renderRutina({ exercises:cache.exercises, mesocycles:cache.mesocycles,
         onAdd: day => UI.setMain(UI.exerciseForm(null, day, onExForm)),
         onAddFromLib: (day, lib) => UI.setMain(UI.exerciseForm({ dia:day, nombre:lib.nombre, grupo:lib.grupo, unidad:lib.unidad }, day, onExForm)),
         onEdit: ex => UI.setMain(UI.exerciseForm(ex, ex.dia, onExForm)),
-        onDelete: async id => { await DB.deleteExercise(id); cache.exercises=await DB.getExercises(); render(); UI.toast('Eliminado'); } }));
+        onDelete: async id => { await DB.deleteExercise(id); cache.exercises=await DB.getExercises(); render(); UI.toast('Eliminado'); },
+        onAddMeso: async m => { await DB.addMesocycle(m); cache.mesocycles=await DB.getMesocycles(); Offline.saveCache(cache); render(); UI.toast('Mesociclo iniciado'); },
+        onDeleteMeso: async id => { await DB.deleteMesocycle(id); cache.mesocycles=await DB.getMesocycles(); Offline.saveCache(cache); render(); } }));
     } else if (currentTab==='avances') {
       UI.setMain(UI.renderAvances({ sets:cache.sets, exercises:cache.exercises,
         weights:cache.weights, foodLogs:cache.foodLogs, cardio:cache.cardio, habitLogs:cache.habitLogs,
@@ -124,14 +131,24 @@
         onDeletePhoto: async (id, path) => { await DB.deletePhoto(id, path); cache.photos=await DB.getPhotos(); render(); } }));
     } else if (currentTab==='nutricion') {
       nutriDate = nutriDate || Logic.todayISO();
+      const reloadNutri = async () => { try {
+        cache.recipes=await DB.getRecipes(); cache.supplements=await DB.getSupplements(); cache.supplementLogs=await DB.getSupplementLogs();
+        Offline.saveCache(cache);
+      } catch(e){ UI.toast('Error: '+(e.message||'')); } render(); };
       UI.setMain(UI.renderNutricion({ logs:cache.foodLogs, profile:cache.profile, lastWeight:lastWeightKg(), weights:cache.weights, date:nutriDate,
+        recipes:cache.recipes, supplements:cache.supplements, supplementLogs:cache.supplementLogs,
         onChangeDate: d => { nutriDate=d; render(); },
         onSearch: term => DB.searchFoods(term),
         onScan: code => DB.searchFoodByBarcode(code),
         onLog: async l => { const ok = await tryWrite('food', ()=>DB.addFoodLog(l), l,
             ()=>{ cache.foodLogs=[...cache.foodLogs, {...l}]; });
           if(ok){ cache.foodLogs=await DB.getFoodLogs(); Offline.saveCache(cache); UI.toast('Registrado'); } render(); },
-        onDeleteLog: async id => { await DB.deleteFoodLog(id); cache.foodLogs=await DB.getFoodLogs(); Offline.saveCache(cache); render(); } }));
+        onDeleteLog: async id => { await DB.deleteFoodLog(id); cache.foodLogs=await DB.getFoodLogs(); Offline.saveCache(cache); render(); },
+        onAddRecipe: async r => { await DB.addRecipe(r); await reloadNutri(); UI.toast('Receta guardada'); },
+        onDeleteRecipe: async id => { await DB.deleteRecipe(id); await reloadNutri(); },
+        onAddSupplement: async s => { await DB.addSupplement(s); await reloadNutri(); UI.toast('Suplemento agregado'); },
+        onDeleteSupplement: async id => { await DB.deleteSupplement(id); await reloadNutri(); },
+        onToggleSupplement: async (sid, fecha, done) => { await DB.setSupplementLog(sid, fecha, done); await reloadNutri(); } }));
     } else if (currentTab==='salud') {
       const reload = async () => { try {
         cache.sleep=await DB.getSleep(); cache.wellness=await DB.getWellness();

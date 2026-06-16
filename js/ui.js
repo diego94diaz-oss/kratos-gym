@@ -311,8 +311,34 @@ const UI = (() => {
   }
 
   // ---------- RUTINA ----------
-  function renderRutina({ exercises, onAdd, onEdit, onDelete, onAddFromLib }) {
+  function renderRutina({ exercises, mesocycles = [], onAdd, onEdit, onDelete, onAddFromLib, onAddMeso, onDeleteMeso }) {
     const wrap = el('div');
+
+    // Periodización (mesociclo activo)
+    const meso = mesocycles.find(m => m.activo);
+    const mc = el('div','card');
+    if (meso){
+      const wk = Math.min(meso.semanas, Math.floor((Date.now() - new Date(meso.fecha_inicio)) / (7*86400000)) + 1);
+      const guide = { acumulacion:'Volumen alto, RIR 2-3. Acumula trabajo.', intensificacion:'Sube intensidad, reduce algo de volumen.',
+        realizacion:'Cargas altas, pocas series, técnica impecable.', deload:'Descarga: −40-50% de volumen, mantén intensidad.' }[meso.fase] || '';
+      mc.innerHTML = `<div class="row between"><h3 style="margin:0">🗓️ ${esc(meso.nombre)}</h3><button class="icon-btn dl">🗑️</button></div>
+        <div class="ex-meta">Semana ${wk}/${meso.semanas} · Fase: ${esc(meso.fase||'—')}</div>
+        <div class="rec" style="margin-top:8px">${esc(guide)}</div>`;
+      mc.querySelector('.dl').onclick = () => { if(confirm('¿Finalizar mesociclo?')) onDeleteMeso(meso.id); };
+    } else {
+      mc.innerHTML = `<h3>🗓️ Periodización</h3><p class="help">Crea un mesociclo para guiar la progresión por fases.</p>
+        <input id="ms-n" placeholder="Nombre (ej: Hipertrofia bloque 1)">
+        <div class="grid2" style="margin-top:8px">
+          <div><label class="help">Fase</label><select id="ms-f" class="day-sel" style="width:100%">
+            <option value="acumulacion">Acumulación</option><option value="intensificacion">Intensificación</option>
+            <option value="realizacion">Realización</option><option value="deload">Deload</option></select></div>
+          <div><label class="help">Semanas</label><input id="ms-w" type="number" value="4"></div></div>
+        <button class="btn btn-primary" id="ms-add" style="width:100%;margin-top:10px">Iniciar mesociclo</button>`;
+      mc.querySelector('#ms-add').onclick = () => { const n=mc.querySelector('#ms-n').value.trim(); if(!n) return toast('Pon un nombre');
+        onAddMeso({ nombre:n, fase:mc.querySelector('#ms-f').value, semanas:Number(mc.querySelector('#ms-w').value)||4, fecha_inicio:Logic.todayISO(), activo:true }); };
+    }
+    wrap.appendChild(mc);
+
     wrap.appendChild(el('div','section-title','Rutina Full Body A/B · Recomposición'));
     ['A','B'].forEach(d => {
       const list = exercises.filter(e=>e.dia===d).sort((a,b)=>a.orden-b.orden);
@@ -684,7 +710,9 @@ const UI = (() => {
       <div class="bar ${over?'over':''}"><i style="width:${pct}%"></i></div></div>`;
   }
 
-  function renderNutricion({ logs, profile, lastWeight, weights = [], date, onChangeDate, onSearch, onLog, onDeleteLog, onScan }) {
+  function renderNutricion({ logs, profile, lastWeight, weights = [], date, onChangeDate, onSearch, onLog, onDeleteLog, onScan,
+                             recipes = [], supplements = [], supplementLogs = [],
+                             onAddRecipe, onDeleteRecipe, onAddSupplement, onDeleteSupplement, onToggleSupplement }) {
     const wrap = el('div');
     const t = Logic.effectiveTargets(profile, lastWeight);
     const dayLogs = logs.filter(l => l.fecha === date);
@@ -860,6 +888,63 @@ const UI = (() => {
       });
     }
     wrap.appendChild(logCard);
+
+    // --- Recetas ---
+    const recCard = el('div','card');
+    recCard.innerHTML = `<h3>🍴 Recetas</h3>`;
+    if (!recipes.length) recCard.appendChild(el('div','empty','Crea recetas para loguear tus platos al toque.'));
+    recipes.forEach(rc => {
+      const it = el('div','list-item');
+      it.innerHTML = `<div><div style="font-weight:600">${esc(rc.nombre)}</div>
+        <div class="ex-meta">${Math.round(rc.kcal||0)} kcal · P${rc.prot??'—'} G${rc.grasa??'—'} C${rc.carbo??'—'} /porción</div></div>
+        <div class="row" style="gap:4px"><button class="icon-btn lg" title="Loguear">➕</button><button class="icon-btn dl">🗑️</button></div>`;
+      it.querySelector('.lg').onclick = () => {
+        const por = Number(prompt('¿Cuántas porciones?', '1')) || 0; if (!por) return;
+        onLog({ fecha:date, comida:'almuerzo', nombre:`${rc.nombre} (${por}p)`, gramos:por,
+          kcal:Math.round((rc.kcal||0)*por), prot:+((rc.prot||0)*por).toFixed(1), grasa:+((rc.grasa||0)*por).toFixed(1), carbo:+((rc.carbo||0)*por).toFixed(1) });
+      };
+      it.querySelector('.dl').onclick = () => { if(confirm('¿Eliminar receta?')) onDeleteRecipe(rc.id); };
+      recCard.appendChild(it);
+    });
+    const rf = el('div'); rf.style.marginTop='8px';
+    rf.innerHTML = `<div class="divider"></div><label class="help">Nueva receta (macros por porción)</label>
+      <input id="rc-n" placeholder="Nombre del plato">
+      <div class="grid2" style="margin-top:8px"><div><label class="help">Kcal</label><input id="rc-k" type="number"></div><div><label class="help">Proteína</label><input id="rc-p" type="number"></div></div>
+      <div class="grid2" style="margin-top:8px"><div><label class="help">Grasa</label><input id="rc-g" type="number"></div><div><label class="help">Carbos</label><input id="rc-c" type="number"></div></div>
+      <button class="btn btn-primary" id="rc-add" style="width:100%;margin-top:10px">Guardar receta</button>`;
+    rf.querySelector('#rc-add').onclick = () => { const n=rf.querySelector('#rc-n').value.trim(); if(!n) return toast('Pon un nombre');
+      onAddRecipe({ nombre:n, porciones:1, kcal:Number(rf.querySelector('#rc-k').value)||null, prot:Number(rf.querySelector('#rc-p').value)||null,
+        grasa:Number(rf.querySelector('#rc-g').value)||null, carbo:Number(rf.querySelector('#rc-c').value)||null }); };
+    recCard.appendChild(rf);
+    wrap.appendChild(recCard);
+
+    // --- Suplementos ---
+    const supDone = new Set(supplementLogs.filter(l=>l.fecha===date).map(l=>l.supplement_id));
+    const spCard = el('div','card');
+    spCard.innerHTML = `<h3>💊 Suplementos</h3>`;
+    if (!supplements.length) spCard.appendChild(el('div','empty','Agrega tus suplementos (creatina, proteína...).'));
+    supplements.forEach(s => {
+      const done = supDone.has(s.id);
+      const ev = s.evidencia ? `<span class="pill ${s.evidencia==='alta'?'b':'a'}">${esc(s.evidencia)}</span>` : '';
+      const it = el('div','list-item');
+      it.innerHTML = `<div class="row" style="gap:8px"><button class="icon-btn st" style="${done?'background:var(--grad);color:#04201d':''}">${done?'✓':'○'}</button>
+        <div><div style="font-weight:600">${esc(s.nombre)} ${ev}</div><div class="ex-meta">${esc(s.dosis||'')}${s.horario?` · ${esc(s.horario)}`:''}</div></div></div>
+        <button class="icon-btn dl">🗑️</button>`;
+      it.querySelector('.st').onclick = () => onToggleSupplement(s.id, date, !done);
+      it.querySelector('.dl').onclick = () => { if(confirm('¿Quitar suplemento?')) onDeleteSupplement(s.id); };
+      spCard.appendChild(it);
+    });
+    const sf = el('div'); sf.style.marginTop='8px';
+    sf.innerHTML = `<div class="divider"></div>
+      <div class="row" style="gap:8px"><input id="sp-n" placeholder="Suplemento" style="flex:1"><input id="sp-d" placeholder="Dosis" style="width:90px"></div>
+      <div class="row" style="gap:8px;margin-top:8px"><input id="sp-h" placeholder="Horario" style="flex:1">
+        <select id="sp-e" class="day-sel"><option value="">Evidencia</option><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option></select>
+        <button class="btn btn-primary" id="sp-add">+</button></div>`;
+    sf.querySelector('#sp-add').onclick = () => { const n=sf.querySelector('#sp-n').value.trim(); if(!n) return toast('Pon un nombre');
+      onAddSupplement({ nombre:n, dosis:sf.querySelector('#sp-d').value.trim()||null, horario:sf.querySelector('#sp-h').value.trim()||null, evidencia:sf.querySelector('#sp-e').value||null }); };
+    spCard.appendChild(sf);
+    wrap.appendChild(spCard);
+
     return wrap;
   }
 

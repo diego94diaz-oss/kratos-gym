@@ -254,6 +254,27 @@ const DB = (() => {
   async function addRehab(r){ r.user_id=uid(); const { error } = await sb.from('rehab_logs').insert(r); if(error) throw error; }
   async function getRehab(){ const { data } = await sb.from('rehab_logs').select('*').eq('user_id', uid()).order('fecha'); return data||[]; }
 
+  // ---- Recetas ----
+  async function getRecipes(){ const { data } = await sb.from('recipes').select('*').eq('user_id', uid()).order('created_at', { ascending:false }); return data||[]; }
+  async function addRecipe(r){ r.user_id=uid(); const { error } = await sb.from('recipes').insert(r); if(error) throw error; }
+  async function deleteRecipe(id){ await sb.from('recipes').delete().eq('id', id).eq('user_id', uid()); }
+
+  // ---- Suplementos ----
+  async function getSupplements(){ const { data } = await sb.from('supplements').select('*').eq('user_id', uid()).eq('activo', true).order('created_at'); return data||[]; }
+  async function addSupplement(s){ s.user_id=uid(); const { error } = await sb.from('supplements').insert(s); if(error) throw error; }
+  async function deleteSupplement(id){ await sb.from('supplements').update({ activo:false }).eq('id', id).eq('user_id', uid()); }
+  async function getSupplementLogs(){ const { data } = await sb.from('supplement_logs').select('*').eq('user_id', uid()).order('fecha'); return data||[]; }
+  async function setSupplementLog(supplement_id, fecha, done){
+    if (done){ const { error } = await sb.from('supplement_logs').upsert({ user_id:uid(), supplement_id, fecha }, { onConflict:'user_id,supplement_id,fecha' }); if(error) throw error; }
+    else { await sb.from('supplement_logs').delete().eq('user_id', uid()).eq('supplement_id', supplement_id).eq('fecha', fecha); }
+  }
+
+  // ---- Mesociclos ----
+  async function getMesocycles(){ const { data } = await sb.from('mesocycles').select('*').eq('user_id', uid()).order('created_at', { ascending:false }); return data||[]; }
+  async function addMesocycle(m){ m.user_id=uid(); const { error } = await sb.from('mesocycles').insert(m); if(error) throw error; }
+  async function updateMesocycle(id, patch){ await sb.from('mesocycles').update(patch).eq('id', id).eq('user_id', uid()); }
+  async function deleteMesocycle(id){ await sb.from('mesocycles').delete().eq('id', id).eq('user_id', uid()); }
+
   return {
     configured, init, currentUser, signIn, signUp, signOut, onAuth, uid,
     getProfile, saveProfile,
@@ -270,5 +291,8 @@ const DB = (() => {
     savePushSub, deletePushSub, saveReminders,
     addCardio, getCardio, deleteCardio,
     addRehab, getRehab,
+    getRecipes, addRecipe, deleteRecipe,
+    getSupplements, addSupplement, deleteSupplement, getSupplementLogs, setSupplementLog,
+    getMesocycles, addMesocycle, updateMesocycle, deleteMesocycle,
   };
 })();
