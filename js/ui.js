@@ -652,6 +652,7 @@ const UI = (() => {
     };
     wrap.appendChild(mForm);
 
+    const latest = Logic.latestMeasures(measurements);
     const measuredKeys = Object.keys(latest);
     if (measuredKeys.length) {
       // Últimas medidas (grid)
