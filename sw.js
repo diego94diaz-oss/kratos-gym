@@ -1,5 +1,5 @@
 // Service worker — network-first para que las actualizaciones lleguen siempre.
-const CACHE = 'kratos-gym-v16';
+const CACHE = 'kratos-gym-v17';
 const ASSETS = [
   './', './index.html', './css/styles.css',
   './js/db.js', './js/offline.js', './js/push.js', './js/library.js', './js/seed.js', './js/logic.js', './js/ui.js', './js/app.js',
@@ -37,7 +37,7 @@ self.addEventListener('fetch', e => {
   // Same-origin: red primero (cae a caché si estás offline)
   if (url.startsWith(self.location.origin)) {
     e.respondWith(
-      fetch(e.request).then(res => {
+      fetch(e.request, { cache: 'no-store' }).then(res => {
         const copy = res.clone();
         caches.open(CACHE).then(c => c.put(e.request, copy));
         return res;
