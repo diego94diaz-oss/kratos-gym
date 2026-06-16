@@ -178,6 +178,32 @@ const UI = (() => {
     draw();
   }
 
+  // Chat con el coach IA (overlay)
+  function startCoachChat(askFn){
+    const msgs = [];
+    const ov = el('div','chat-ov');
+    ov.innerHTML = `<div class="chat-hd"><span>🤖 Kratos · Coach IA</span><button class="icon-btn" id="ch-x">✕</button></div>
+      <div class="chat-msgs" id="ch-msgs"></div>
+      <div class="chat-in"><input id="ch-in" placeholder="Pregúntale a Kratos…" autocomplete="off"><button class="btn btn-primary" id="ch-send">➤</button></div>`;
+    document.body.appendChild(ov);
+    const box = ov.querySelector('#ch-msgs'), input = ov.querySelector('#ch-in');
+    const add = (role, content) => { const m=el('div','cmsg '+(role==='user'?'user':'bot')); m.textContent=content; box.appendChild(m); box.scrollTop=box.scrollHeight; return m; };
+    add('bot', '¡Hola Diego! Soy Kratos. Pregúntame sobre tu entrenamiento, progreso o nutrición — tengo tus datos a la vista. 💪');
+    const close = () => ov.remove();
+    ov.querySelector('#ch-x').onclick = close;
+    const send = async () => {
+      const text = input.value.trim(); if(!text) return;
+      input.value=''; add('user', text); msgs.push({ role:'user', content:text });
+      const pending = add('bot', 'Pensando…');
+      try { const reply = await askFn(msgs); pending.textContent = reply || '(sin respuesta)'; msgs.push({ role:'assistant', content:reply }); }
+      catch(e){ pending.textContent = '⚠️ ' + (e.message || 'Error'); }
+      box.scrollTop = box.scrollHeight;
+    };
+    ov.querySelector('#ch-send').onclick = send;
+    input.addEventListener('keydown', e => { if(e.key==='Enter') send(); });
+    setTimeout(()=>input.focus(), 50);
+  }
+
   // Escáner de código de barras (BarcodeDetector; fallback a entrada manual)
   async function startScanner(onCode){
     if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia){
@@ -208,7 +234,7 @@ const UI = (() => {
   }
 
   // ---------- DASHBOARD (Hoy) ----------
-  function renderDashboard({ profile, exercises, sets, weights, measurements, foodLogs, lastWeight, day, sleep = [], wellness = [], injuries = [], onTrain, onGo }) {
+  function renderDashboard({ profile, exercises, sets, weights, measurements, foodLogs, lastWeight, day, sleep = [], wellness = [], injuries = [], onTrain, onGo, onCoach }) {
     const wrap = el('div');
     const today = Logic.todayISO();
 
@@ -252,6 +278,14 @@ const UI = (() => {
     trCard.appendChild(trBtn);
     wrap.appendChild(trCard);
 
+    // --- Coach IA ---
+    if (onCoach){
+      const coachBtn = el('button','btn btn-ghost','🤖 Pregúntale a Kratos (IA)');
+      coachBtn.style.cssText = 'width:100%;margin-bottom:14px;padding:13px';
+      coachBtn.onclick = onCoach;
+      wrap.appendChild(coachBtn);
+    }
+
     // --- Nutrición de hoy ---
     const t = Logic.effectiveTargets(profile, lastWeight);
     const sum = Logic.sumFoods(foodLogs.filter(l => l.fecha === today));
@@ -273,16 +307,17 @@ const UI = (() => {
     const avg = Logic.weeklyAvg(weights);
     const trend = Logic.weeklyTrend(weights);
     const last = weights.length ? weights[weights.length-1] : null;
-    const latest = Logic.latestMeasures(measurements || []);
-    const bf = Logic.bodyFatNavy({ sexo: profile?.sexo || 'h', cuello: latest.cuello?.valor_cm,
-      cintura: latest.cintura?.valor_cm, cadera: latest.cadera?.valor_cm, estatura_cm: profile?.estatura_cm });
+    const bfRes = Logic.bestBodyFat(profile, last?.peso_kg, measurements || []);
+    const bf = bfRes?.pct ?? null;
+    const proj = Logic.projectWeight(weights, 4);
     const cCard = el('div','card');
     cCard.innerHTML = `<div class="row between"><h3 style="margin:0">⚖️ Cuerpo</h3><span class="btn-link">Ver →</span></div>
       <div class="grid3" style="margin-top:8px">
         <div class="stat"><div class="big" style="font-size:1.6rem">${last?last.peso_kg:'—'}</div><div class="label">Peso (kg)</div></div>
         <div class="stat"><div class="big" style="font-size:1.6rem">${trend!=null?(trend>0?'+':'')+trend:'—'}</div><div class="label">kg/sem</div></div>
         <div class="stat"><div class="big" style="font-size:1.6rem">${bf!=null?bf+'%':'—'}</div><div class="label">Grasa est.</div></div>
-      </div>`;
+      </div>
+      ${proj?`<div class="ex-meta" style="text-align:center;margin-top:10px">🔮 A este ritmo: ~<b>${proj.value} kg</b> en 4 semanas</div>`:''}`;
     cCard.onclick = () => onGo('peso');
     cCard.style.cursor = 'pointer';
     wrap.appendChild(cCard);
@@ -550,13 +585,9 @@ const UI = (() => {
     </div><div class="rec" style="margin-top:12px"><span class="${advice.clase}">PESO</span> · ${esc(advice.texto)}</div>`;
     wrap.appendChild(top);
 
-    // --- Composición corporal (estimación Navy) ---
-    const latest = Logic.latestMeasures(measurements);
-    const bf = Logic.bodyFatNavy({
-      sexo: profile?.sexo || 'h',
-      cuello: latest.cuello?.valor_cm, cintura: latest.cintura?.valor_cm,
-      cadera: latest.cadera?.valor_cm, estatura_cm: profile?.estatura_cm,
-    });
+    // --- Composición corporal (mejor método disponible) ---
+    const bfRes = Logic.bestBodyFat(profile, last?.peso_kg, measurements);
+    const bf = bfRes?.pct ?? null;
     const comp = Logic.composition(bf, last?.peso_kg);
     const compCard = el('div','card');
     if (bf != null) {
@@ -566,7 +597,7 @@ const UI = (() => {
           <div class="stat"><div class="big">${comp?comp.magra:'—'}</div><div class="label">Masa magra (kg)</div></div>
           <div class="stat"><div class="big">${comp?comp.grasa:'—'}</div><div class="label">Masa grasa (kg)</div></div>
         </div>
-        <p class="help">Método U.S. Navy (perímetros). Estimación orientativa, no sustituye DEXA/balanza.</p>`;
+        <p class="help">Método: ${esc(bfRes.metodo)}. Estimación orientativa, no sustituye DEXA/balanza.</p>`;
     } else {
       compCard.innerHTML = `<div class="section-title" style="margin-top:0">Composición corporal</div>
         <p class="help">Registra <b>cuello</b> y <b>cintura</b> (abajo) y completa tu estatura en Ajustes para estimar tu % de grasa corporal.</p>`;
@@ -1295,5 +1326,5 @@ const UI = (() => {
   }
 
   return { $, el, esc, toast, setMain, renderDashboard, renderHoy, renderRutina, exerciseForm,
-           renderAvances, renderPeso, renderNutricion, renderSalud, renderAjustes };
+           renderAvances, renderPeso, renderNutricion, renderSalud, renderAjustes, startCoachChat };
 })();

@@ -185,6 +185,30 @@ const Logic = (() => {
     if (!isFinite(bf) || bf <= 0 || bf > 70) return null;
     return +bf.toFixed(1);
   }
+  // % graso por IMC (Deurenberg) — sexo: 'h'=1 | 'm'=0
+  function bodyFatBMI({ sexo='h', peso, estatura_cm, edad }) {
+    if (!peso || !estatura_cm || !edad) return null;
+    const imc = peso / Math.pow(estatura_cm/100, 2);
+    const bf = 1.20*imc + 0.23*edad - 10.8*(sexo==='m'?0:1) - 5.4;
+    return (bf > 0 && bf < 70) ? +bf.toFixed(1) : null;
+  }
+  // Mejor estimación disponible -> { pct, metodo }
+  function bestBodyFat(profile, peso, measurements) {
+    const latest = latestMeasures(measurements || []);
+    const navy = bodyFatNavy({ sexo:profile?.sexo||'h', cuello:latest.cuello?.valor_cm,
+      cintura:latest.cintura?.valor_cm, cadera:latest.cadera?.valor_cm, estatura_cm:profile?.estatura_cm });
+    if (navy != null) return { pct:navy, metodo:'Navy (perímetros)' };
+    if (profile?.grasa_pct) return { pct:+profile.grasa_pct, metodo:'manual' };
+    const bmi = bodyFatBMI({ sexo:profile?.sexo||'h', peso, estatura_cm:profile?.estatura_cm, edad:profile?.edad });
+    if (bmi != null) return { pct:bmi, metodo:'IMC (Deurenberg)' };
+    return null;
+  }
+  // Proyección de peso a N semanas según tendencia
+  function projectWeight(weights, weeks=4) {
+    const avg = weeklyAvg(weights), trend = weeklyTrend(weights);
+    if (avg == null || trend == null) return null;
+    return { value:+(avg + trend*weeks).toFixed(1), weeks, trend };
+  }
   // Masa grasa / magra a partir de %graso y peso
   function composition(bfPct, pesoKg) {
     if (bfPct == null || !pesoKg) return null;
@@ -428,6 +452,7 @@ const Logic = (() => {
   return { todayISO, nextDay, lastSessionOf, recommend, prsByExercise, newPRs,
            volumeByDate, weeklyAvg, weeklyTrend, bodyAdvice,
            MEASURE_DEFS, latestMeasures, measureSeries, bodyFatNavy, composition,
+           bodyFatBMI, bestBodyFat, projectWeight,
            MEALS, ACTIVITY, bmrMifflin, nutritionTargets, effectiveTargets, macrosFor, sumFoods,
            SET_TYPES, rirFromRpe, rpeFromRir, restSuggestion,
            e1rmByDate, stalledExercises, deloadAdvice, adaptiveTDEE, adaptiveAdvice,

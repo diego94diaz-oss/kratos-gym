@@ -82,6 +82,34 @@
     }
   }
 
+  // ---------- Contexto para la IA ----------
+  function buildAIContext(){
+    const p = cache.profile || {};
+    const lw = lastWeightKg();
+    const t = Logic.effectiveTargets(p, lw);
+    const today = Logic.todayISO();
+    const sumToday = Logic.sumFoods(cache.foodLogs.filter(l=>l.fecha===today));
+    const trend = Logic.weeklyTrend(cache.weights);
+    const prs = Logic.prsByExercise(cache.sets);
+    const recientes = [...new Set(cache.sets.map(s=>s.fecha))].sort().slice(-3);
+    const sesionesTxt = recientes.map(f=>{
+      const ss = cache.sets.filter(s=>s.fecha===f);
+      const exs = [...new Set(ss.map(s=>s.ejercicio))];
+      return `${f} (${ss[0]?.rutina||'?'}): ${exs.map(e=>{ const r=ss.filter(x=>x.ejercicio===e); const mx=Math.max(...r.map(x=>x.peso_kg)); return `${e} ${mx}kg×${Math.max(...r.map(x=>x.reps))}`; }).join('; ')}`;
+    }).join('\n');
+    const objetivos = (cache.goals||[]).filter(g=>g.estado==='activo').map(g=>`${g.titulo} (meta ${g.valor_objetivo}${g.unidad||''})`).join('; ');
+    const lesiones = (cache.injuries||[]).filter(i=>i.estado==='activa').map(i=>i.zona).join(', ');
+    return [
+      `Perfil: ${p.edad||'?'} años, ${p.sexo==='m'?'mujer':'hombre'}, ${p.estatura_cm||'?'} cm, objetivo ${p.objetivo||'?'}.`,
+      `Peso actual ${lw||'?'} kg, tendencia ${trend!=null?trend+' kg/sem':'s/d'}.`,
+      t.kcal?`Objetivo nutricional: ${t.kcal} kcal, ${t.prot}g prot. Hoy lleva ${Math.round(sumToday.kcal)} kcal / ${Math.round(sumToday.prot)}g prot.`:'',
+      `Total sesiones: ${new Set(cache.sets.map(s=>s.fecha)).size}, PRs: ${Object.keys(prs).length}.`,
+      sesionesTxt?`Últimas sesiones:\n${sesionesTxt}`:'Sin sesiones registradas.',
+      objetivos?`Objetivos activos: ${objetivos}.`:'',
+      lesiones?`Lesiones activas: ${lesiones}.`:'',
+    ].filter(Boolean).join('\n');
+  }
+
   // ---------- Navegación ----------
   function setTab(tab){
     currentTab = tab;
@@ -103,7 +131,8 @@
           weights:cache.weights, measurements:cache.measurements, foodLogs:cache.foodLogs, lastWeight:lastWeightKg(), day,
           sleep:cache.sleep, wellness:cache.wellness, injuries:cache.injuries,
           onTrain: () => { trainingMode=true; reqWake(); render(); },
-          onGo: tab => setTab(tab) }));
+          onGo: tab => setTab(tab),
+          onCoach: () => UI.startCoachChat(messages => DB.askAI(messages, buildAIContext())) }));
       }
     } else if (currentTab==='rutina') {
       UI.setMain(UI.renderRutina({ exercises:cache.exercises, mesocycles:cache.mesocycles,

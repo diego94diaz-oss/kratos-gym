@@ -269,6 +269,14 @@ const DB = (() => {
     else { await sb.from('supplement_logs').delete().eq('user_id', uid()).eq('supplement_id', supplement_id).eq('fecha', fecha); }
   }
 
+  // ---- IA (Edge Function kratos-ai) ----
+  async function askAI(messages, context){
+    const { data, error } = await sb.functions.invoke('kratos-ai', { body: { messages, context } });
+    if (error) throw new Error(error.message || 'No se pudo contactar al coach IA (¿función desplegada?)');
+    if (data?.error) throw new Error(data.error);
+    return data?.reply || '';
+  }
+
   // ---- Mesociclos ----
   async function getMesocycles(){ const { data } = await sb.from('mesocycles').select('*').eq('user_id', uid()).order('created_at', { ascending:false }); return data||[]; }
   async function addMesocycle(m){ m.user_id=uid(); const { error } = await sb.from('mesocycles').insert(m); if(error) throw error; }
@@ -294,5 +302,6 @@ const DB = (() => {
     getRecipes, addRecipe, deleteRecipe,
     getSupplements, addSupplement, deleteSupplement, getSupplementLogs, setSupplementLog,
     getMesocycles, addMesocycle, updateMesocycle, deleteMesocycle,
+    askAI,
   };
 })();
