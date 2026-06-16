@@ -432,7 +432,8 @@ const Logic = (() => {
            SET_TYPES, rirFromRpe, rpeFromRir, restSuggestion,
            e1rmByDate, stalledExercises, deloadAdvice, adaptiveTDEE, adaptiveAdvice,
            daysSinceTraining, sessionsInLast, loggingStreak, buildAlerts, weeklyReport,
-           habitStreak, readiness, goalCurrentValue, goalProgress };
+           habitStreak, readiness, goalCurrentValue, goalProgress,
+           maxHR, hrZones, zoneOf };
 
   // ---- Salud / hábitos / objetivos (Fase 2 batch B) ----
   function habitStreak(habitLogs, habitId){
@@ -462,5 +463,17 @@ const Logic = (() => {
     if (current == null || !isFinite(ini) || !isFinite(obj) || ini === obj) return null;
     let pct = (current - ini) / (obj - ini);
     return Math.round(Math.max(0, Math.min(1, pct)) * 100);
+  }
+
+  // ---- Cardio / zonas de FC (Tanaka) ----
+  function maxHR(edad){ return edad ? Math.round(208 - 0.7*edad) : null; }
+  function hrZones(edad){
+    const m = maxHR(edad); if (!m) return null;
+    return [[0.5,0.6,'Z1 Recuperación'],[0.6,0.7,'Z2 Aeróbico'],[0.7,0.8,'Z3 Tempo'],[0.8,0.9,'Z4 Umbral'],[0.9,1.0,'Z5 Máximo']]
+      .map(([a,b,n]) => ({ n, lo:Math.round(m*a), hi:Math.round(m*b) }));
+  }
+  function zoneOf(fc, edad){
+    const zs = hrZones(edad); if (!zs || !fc) return null;
+    return (zs.find(z => fc <= z.hi) || zs[zs.length-1]).n;
   }
 })();

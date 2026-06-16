@@ -245,6 +245,11 @@ const DB = (() => {
   async function deletePushSub(endpoint){ await sb.from('push_subscriptions').delete().eq('user_id', uid()).eq('endpoint', endpoint); }
   async function saveReminders(reminders){ const { error } = await sb.from('profile').update({ reminders }).eq('user_id', uid()); if(error) throw error; }
 
+  // ---- Cardio ----
+  async function addCardio(c){ c.user_id=uid(); const { error } = await sb.from('cardio_sessions').insert(c); if(error) throw error; }
+  async function getCardio(){ const { data } = await sb.from('cardio_sessions').select('*').eq('user_id', uid()).order('fecha', { ascending:false }); return data||[]; }
+  async function deleteCardio(id){ await sb.from('cardio_sessions').delete().eq('id', id).eq('user_id', uid()); }
+
   return {
     configured, init, currentUser, signIn, signUp, signOut, onAuth, uid,
     getProfile, saveProfile,
@@ -259,5 +264,6 @@ const DB = (() => {
     getInjuries, addInjury, updateInjury, deleteInjury,
     getGoals, addGoal, updateGoal, deleteGoal,
     savePushSub, deletePushSub, saveReminders,
+    addCardio, getCardio, deleteCardio,
   };
 })();

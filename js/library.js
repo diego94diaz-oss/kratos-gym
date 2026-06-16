@@ -56,6 +56,22 @@ const EXERCISE_LIBRARY = [
   { nombre:'Pallof press', grupo:'core', patron:'core', unidad:'mancuerna' },
 ];
 
+// Rutinas de movilidad / calentamiento guiado (segundos por ejercicio)
+const MOBILITY_ROUTINES = [
+  { nombre:'Calentamiento general', icono:'🔥', items:[
+    { n:'Jumping jacks', s:40 }, { n:'Círculos de brazos', s:30 }, { n:'Rotación de cadera', s:30 },
+    { n:'Sentadillas sin peso', s:40 }, { n:'Zancadas con torsión', s:40 }, { n:'Balanceo de piernas', s:30 } ] },
+  { nombre:'Movilidad de hombros', icono:'💪', items:[
+    { n:'Dislocaciones con banda/palo', s:40 }, { n:'Círculos de hombro', s:30 }, { n:'Estiramiento pectoral en pared', s:40 },
+    { n:'Rotación externa con banda', s:40 }, { n:'Cat-camel', s:40 } ] },
+  { nombre:'Movilidad de cadera', icono:'🦵', items:[
+    { n:'90/90 cambios', s:50 }, { n:'Sentadilla profunda mantenida', s:40 }, { n:'Estiramiento de flexor (zancada)', s:40 },
+    { n:'Puente de glúteo', s:40 }, { n:'Rotación de cadera en cuadrupedia', s:40 } ] },
+  { nombre:'Columna y espalda', icono:'🧘', items:[
+    { n:'Cat-camel', s:40 }, { n:'Rotación torácica', s:40 }, { n:'Perro-pájaro', s:40 },
+    { n:'Estiramiento de gato', s:30 }, { n:'Plancha suave', s:30 } ] },
+];
+
 // Alternativas: mismo grupo (prioriza mismo patrón), excluye el actual.
 function libraryAlternatives(nombre, grupo, patron){
   const base = EXERCISE_LIBRARY.filter(e => e.nombre !== nombre && (grupo ? e.grupo === grupo : true));

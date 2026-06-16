@@ -155,6 +155,29 @@ const UI = (() => {
     upd();
   }
 
+  function beep(freq=880){ try { const a=new (window.AudioContext||window.webkitAudioContext)(); const o=a.createOscillator(),g=a.createGain(); o.connect(g); g.connect(a.destination); o.frequency.value=freq; o.start(); g.gain.setValueAtTime(.2,a.currentTime); g.gain.exponentialRampToValueAtTime(.001,a.currentTime+.4); o.stop(a.currentTime+.4); } catch {} }
+
+  // Reproductor guiado de movilidad (overlay con auto-avance)
+  let mobInt;
+  function startMobility(routine){
+    clearInterval(mobInt); document.querySelector('.rest-ov')?.remove();
+    let idx=0, left=routine.items[0].s;
+    const ov=el('div','rest-ov'); ov.style.flexWrap='wrap';
+    ov.innerHTML=`<span class="t" id="mb-t"></span>
+      <div class="bar2" style="flex:1"><i id="mb-bar"></i></div>
+      <button id="mb-skip">⏭</button><button id="mb-x">✕</button>
+      <div id="mb-name" style="flex-basis:100%;margin-top:6px;font-weight:700"></div>`;
+    document.body.appendChild(ov);
+    const tEl=ov.querySelector('#mb-t'), bar=ov.querySelector('#mb-bar'), name=ov.querySelector('#mb-name');
+    const draw=()=>{ const it=routine.items[idx]; tEl.textContent=left+'s'; bar.style.width=Math.max(0,left/it.s*100)+'%'; name.textContent=`${idx+1}/${routine.items.length} · ${it.n}`; };
+    const finish=()=>{ clearInterval(mobInt); ov.remove(); if(navigator.vibrate) navigator.vibrate([200,80,200]); toast('Movilidad completada 🧘'); };
+    const next=()=>{ idx++; if(idx>=routine.items.length){ finish(); return; } left=routine.items[idx].s; beep(); draw(); };
+    ov.querySelector('#mb-skip').onclick=next;
+    ov.querySelector('#mb-x').onclick=()=>{ clearInterval(mobInt); ov.remove(); };
+    mobInt=setInterval(()=>{ left--; if(left<=0) next(); else draw(); }, 1000);
+    draw();
+  }
+
   // Escáner de código de barras (BarcodeDetector; fallback a entrada manual)
   async function startScanner(onCode){
     if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia){
@@ -835,9 +858,10 @@ const UI = (() => {
     <option value="">—</option>${[1,2,3,4,5].map(n=>`<option value="${n}" ${Number(val)===n?'selected':''}>${n}</option>`).join('')}</select>`; }
 
   function renderSalud(p){
-    const { sleep, wellness, habits, habitLogs, injuries, goals, ctx,
+    const { sleep, wellness, habits, habitLogs, injuries, goals, ctx, profile, cardio = [],
       onSleep, onWellness, onAddHabit, onDeleteHabit, onToggleHabit,
-      onAddInjury, onUpdateInjury, onDeleteInjury, onAddGoal, onDeleteGoal } = p;
+      onAddInjury, onUpdateInjury, onDeleteInjury, onAddGoal, onDeleteGoal,
+      onCardio, onDeleteCardio } = p;
     const wrap = el('div');
     const today = Logic.todayISO();
     const sToday = sleep.find(x=>x.fecha===today) || {};
@@ -852,6 +876,55 @@ const UI = (() => {
         <div class="ex-meta">${lbl}</div></div><div class="big">${rd}</div></div>`;
       wrap.appendChild(rc);
     }
+
+    // --- Cardio ---
+    const today2 = Logic.todayISO();
+    const cCard = el('div','card');
+    const mods = [['caminata','Caminata'],['trote','Trote'],['bici','Bici'],['hiit','HIIT'],['eliptica','Elíptica'],['remo','Remo'],['otro','Otro']];
+    cCard.innerHTML = `<h3>🏃 Cardio</h3>
+      <div class="row" style="gap:8px">
+        <div style="flex:1"><label class="help">Modalidad</label><select id="c-mod" class="day-sel" style="width:100%">${mods.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select></div>
+        <div style="width:90px"><label class="help">Min</label><input id="c-dur" type="number" inputmode="numeric"></div>
+      </div>
+      <div class="grid3" style="margin-top:8px">
+        <div><label class="help">Km</label><input id="c-dist" type="number" step="0.1"></div>
+        <div><label class="help">FC media</label><input id="c-fcm" type="number"></div>
+        <div><label class="help">RPE</label><input id="c-rpe" type="number"></div>
+      </div>
+      <button class="btn btn-primary" id="c-save" style="width:100%;margin-top:10px">Registrar cardio</button>`;
+    cCard.querySelector('#c-save').onclick = () => {
+      const dur = Number(cCard.querySelector('#c-dur').value)||null;
+      if (!dur) return toast('Indica los minutos');
+      onCardio({ fecha:today2, modalidad:cCard.querySelector('#c-mod').value, duracion_min:dur,
+        distancia_km:Number(cCard.querySelector('#c-dist').value)||null, fc_media:Number(cCard.querySelector('#c-fcm').value)||null,
+        rpe:Number(cCard.querySelector('#c-rpe').value)||null });
+    };
+    if (cardio.length){
+      cCard.appendChild(el('div','divider'));
+      cardio.slice(0,8).forEach(c=>{
+        const zona = Logic.zoneOf(c.fc_media, profile?.edad);
+        const it = el('div','list-item');
+        it.innerHTML = `<div><div style="font-weight:600">${esc(c.modalidad||'')} · ${c.duracion_min} min</div>
+          <div class="ex-meta">${c.fecha}${c.distancia_km?` · ${c.distancia_km} km`:''}${c.fc_media?` · FC ${c.fc_media}${zona?` (${zona})`:''}`:''}${c.rpe?` · RPE ${c.rpe}`:''}</div></div>
+          <button class="icon-btn dl">🗑️</button>`;
+        it.querySelector('.dl').onclick = () => { if(confirm('¿Eliminar registro?')) onDeleteCardio(c.id); };
+        cCard.appendChild(it);
+      });
+    }
+    wrap.appendChild(cCard);
+
+    // --- Movilidad guiada ---
+    const mCard = el('div','card');
+    mCard.innerHTML = `<h3>🧘 Movilidad guiada</h3><p class="help">Rutinas con temporizador automático.</p>`;
+    (window.MOBILITY_ROUTINES||[]).forEach(r=>{
+      const it = el('div','list-item');
+      const total = Math.round(r.items.reduce((a,x)=>a+x.s,0)/60);
+      it.innerHTML = `<div><div style="font-weight:600">${r.icono||''} ${esc(r.nombre)}</div>
+        <div class="ex-meta">${r.items.length} ejercicios · ~${total} min</div></div><button class="icon-btn go">▶️</button>`;
+      it.querySelector('.go').onclick = () => startMobility(r);
+      mCard.appendChild(it);
+    });
+    wrap.appendChild(mCard);
 
     // --- Objetivos ---
     const gCard = el('div','card');

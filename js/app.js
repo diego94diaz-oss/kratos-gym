@@ -4,7 +4,7 @@
 (() => {
   const $ = UI.$;
   let cache = { exercises:[], sets:[], weights:[], measurements:[], foodLogs:[], photos:[],
-                sleep:[], wellness:[], habits:[], habitLogs:[], injuries:[], goals:[], profile:null };
+                sleep:[], wellness:[], habits:[], habitLogs:[], injuries:[], goals:[], cardio:[], profile:null };
   let currentTab = 'hoy';
   let pickedDay = null;
   let trainingMode = false;
@@ -62,6 +62,7 @@
     try { cache.habitLogs = await DB.getHabitLogs(); } catch { cache.habitLogs = []; }
     try { cache.injuries  = await DB.getInjuries();  } catch { cache.injuries = []; }
     try { cache.goals     = await DB.getGoals();     } catch { cache.goals = []; }
+    try { cache.cardio    = await DB.getCardio();    } catch { cache.cardio = []; }
   }
 
   async function ensureSeed(){
@@ -134,12 +135,15 @@
         cache.sleep=await DB.getSleep(); cache.wellness=await DB.getWellness();
         cache.habits=await DB.getHabits(); cache.habitLogs=await DB.getHabitLogs();
         cache.injuries=await DB.getInjuries(); cache.goals=await DB.getGoals();
+        cache.cardio=await DB.getCardio();
         Offline.saveCache(cache);
       } catch(e){ UI.toast('Error: '+(e.message||'')); } render(); };
       UI.setMain(UI.renderSalud({
         sleep:cache.sleep, wellness:cache.wellness, habits:cache.habits, habitLogs:cache.habitLogs,
-        injuries:cache.injuries, goals:cache.goals,
+        injuries:cache.injuries, goals:cache.goals, cardio:cache.cardio, profile:cache.profile,
         ctx:{ lastWeight:lastWeightKg(), measurements:cache.measurements, sets:cache.sets },
+        onCardio: async c => { await DB.addCardio(c); await reload(); UI.toast('Cardio registrado'); },
+        onDeleteCardio: async id => { await DB.deleteCardio(id); await reload(); },
         onSleep: async s => { await DB.addSleep(s); await reload(); UI.toast('Sueño guardado'); },
         onWellness: async w => { await DB.addWellness(w); await reload(); UI.toast('Estado guardado'); },
         onAddHabit: async h => { await DB.addHabit(h); await reload(); },
