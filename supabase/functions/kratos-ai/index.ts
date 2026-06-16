@@ -1,7 +1,7 @@
 // ============================================================
 //  Edge Function: kratos-ai
-//  Chat con Claude usando el contexto de datos del usuario.
-//  Secrets: ANTHROPIC_API_KEY (req), CLAUDE_MODEL (opc), SUPABASE_URL/ANON (auto)
+//  Chat con Gemini usando el contexto de datos del usuario.
+//  Secrets: GEMINI_API_KEY (req), GEMINI_MODEL (opc), SUPABASE_URL/ANON (auto)
 // ============================================================
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -10,8 +10,8 @@ const cors = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
-const MODEL = Deno.env.get('CLAUDE_MODEL') || 'claude-sonnet-4-6';
-const KEY = Deno.env.get('ANTHROPIC_API_KEY');
+const MODEL = Deno.env.get('GEMINI_MODEL') || 'gemini-2.5-flash';
+const KEY = Deno.env.get('GEMINI_API_KEY');
 
 const SYSTEM = `Eres Kratos, coach personal de fuerza, hipertrofia y nutrición basada en evidencia de Diego.
 Eres directo, motivador y cuantitativo. Respondes en español, conciso y accionable.
@@ -22,7 +22,7 @@ No das diagnósticos médicos; ante señales de alarma, recomienda consultar a u
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   try {
-    if (!KEY) return json({ error: 'Falta ANTHROPIC_API_KEY' }, 500);
+    if (!KEY) return json({ error: 'Falta GEMINI_API_KEY' }, 500);
 
     // Verifica que sea un usuario autenticado de Supabase
     const auth = req.headers.get('Authorization') || '';
@@ -34,18 +34,24 @@ Deno.serve(async (req) => {
     const { messages = [], context = '' } = await req.json();
     const sys = SYSTEM + (context ? `\n\n## Contexto del usuario\n${context}` : '');
 
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
+    const contents = messages.slice(-12).map((m: any) => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: String(m.content || '') }],
+    }));
+
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, {
       method: 'POST',
-      headers: { 'x-api-key': KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      headers: { 'x-goog-api-key': KEY, 'content-type': 'application/json' },
       body: JSON.stringify({
-        model: MODEL, max_tokens: 1024, system: sys,
-        messages: messages.slice(-12).map((m: any) => ({ role: m.role, content: String(m.content || '') })),
+        systemInstruction: { parts: [{ text: sys }] },
+        contents,
+        generationConfig: { maxOutputTokens: 2048, temperature: 0.7 },
       }),
     });
     const data = await r.json();
     if (!r.ok) return json({ error: data?.error?.message || 'Error del modelo' }, 502);
-    const reply = (data.content || []).filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n').trim();
-    return json({ reply });
+    const reply = (data.candidates?.[0]?.content?.parts || []).map((p: any) => p.text).filter(Boolean).join('\n').trim();
+    return json({ reply: reply || '(sin respuesta)' });
   } catch (e) {
     return json({ error: String((e as any)?.message || e) }, 500);
   }

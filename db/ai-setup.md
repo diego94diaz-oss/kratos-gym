@@ -1,29 +1,27 @@
-# IA embebida (Kratos en la app) — despliegue
+# IA embebida (Kratos en la app) — despliegue con Gemini (gratis)
 
-El botón **"🤖 Pregúntale a Kratos"** del dashboard ya está en la app, pero necesita desplegar la Edge Function `kratos-ai` y una API key de Anthropic.
+El botón **"🤖 Pregúntale a Kratos"** del dashboard usa la Edge Function `kratos-ai`, que llama a **Google Gemini** (capa gratuita, sin costo).
 
-## 1. API key de Anthropic
-Consíguela en https://console.anthropic.com → API Keys. (Tiene costo por uso; el chat usa pocos tokens por mensaje.)
+## 1. API key de Gemini
+En **https://aistudio.google.com/apikey** → "Create API key". Las nuevas keys empiezan con `AQ.` (formato nuevo de Google; antes eran `AIza…`).
 
-## 2. Secrets de la función
+## 2. Secret de la función
 ```powershell
-supabase secrets set ANTHROPIC_API_KEY=<tu_api_key>
-# opcional: elegir modelo (por defecto claude-sonnet-4-6)
-supabase secrets set CLAUDE_MODEL=claude-sonnet-4-6
+$env:SUPABASE_ACCESS_TOKEN = "<tu Personal Access Token de Supabase>"
+npx --yes supabase@latest secrets set GEMINI_API_KEY=<tu_key_AQ...> --project-ref ivzzgeoeygggaoazcoeq
+# opcional: modelo (por defecto gemini-2.5-flash). gemini-flash-latest también sirve.
+npx --yes supabase@latest secrets set GEMINI_MODEL=gemini-2.5-flash --project-ref ivzzgeoeygggaoazcoeq
 ```
-(SUPABASE_URL y SUPABASE_ANON_KEY ya están disponibles automáticamente.)
 
 ## 3. Desplegar
 ```powershell
-supabase functions deploy kratos-ai
+npx --yes supabase@latest functions deploy kratos-ai --project-ref ivzzgeoeygggaoazcoeq
 ```
-(Con verificación de JWT por defecto: la app envía tu sesión, así solo tú puedes usarla.)
 
 ## 4. Probar
-Abre la app → dashboard → **🤖 Pregúntale a Kratos** → escribe "¿cómo voy esta semana?".
-La función recibe un resumen de tus datos (perfil, peso, sesiones, nutrición, objetivos, lesiones) y responde con contexto.
+App → dashboard → **🤖 Pregúntale a Kratos** → "¿cómo voy esta semana?". La función arma un resumen de tus datos (perfil, peso, sesiones, nutrición, objetivos, lesiones) y responde con contexto.
 
 ## Notas
-- El contexto se arma en el cliente (`buildAIContext`) y se manda con cada mensaje; la función no accede a la BD.
-- Si el modelo `claude-sonnet-4-6` no estuviera disponible en tu cuenta, cambia `CLAUDE_MODEL` por el id que tengas habilitado.
-- Mientras no despliegues, el botón mostrará un aviso de error (no rompe la app).
+- Solo tú puedes usarla: la función valida tu sesión de Supabase (`--verify-jwt`, por defecto).
+- Si `gemini-2.5-flash` diera rate limit (429), cambia `GEMINI_MODEL` a `gemini-flash-latest`.
+- Costo: capa gratuita de Gemini (límites diarios generosos). Sin tarjeta.
