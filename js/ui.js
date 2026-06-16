@@ -503,7 +503,7 @@ const UI = (() => {
 
     // Volumen por sesión
     const volCard = el('div','card');
-    volCard.innerHTML = '<h3>Volumen por sesión (kg)</h3><canvas id="c-vol" height="160"></canvas>';
+    volCard.innerHTML = '<h3>Volumen por sesión (kg)</h3><div class="chartbox"><canvas id="c-vol"></canvas></div>';
     wrap.appendChild(volCard);
 
     // Selector de ejercicio para progreso
@@ -511,7 +511,7 @@ const UI = (() => {
     const progCard = el('div','card');
     progCard.innerHTML = `<div class="row between"><h3>Progreso por ejercicio</h3>
       <select id="ex-pick" class="day-sel">${exNames.map(n=>`<option>${esc(n)}</option>`).join('')}</select></div>
-      <canvas id="c-prog" height="180"></canvas><div id="prog-rec" class="rec"></div>`;
+      <div class="chartbox"><canvas id="c-prog"></canvas></div><div id="prog-rec" class="rec"></div>`;
     wrap.appendChild(progCard);
 
     // PRs
@@ -620,7 +620,7 @@ const UI = (() => {
     wrap.appendChild(form);
 
     if (weights.length) {
-      const chart = el('div','card'); chart.innerHTML='<h3>Curva de peso</h3><canvas id="c-w" height="170"></canvas>';
+      const chart = el('div','card'); chart.innerHTML='<h3>Curva de peso</h3><div class="chartbox"><canvas id="c-w"></canvas></div>';
       wrap.appendChild(chart);
       const hist = el('div','card'); hist.innerHTML='<h3>Historial</h3>';
       [...weights].reverse().slice(0,30).forEach(w=>{
@@ -670,7 +670,7 @@ const UI = (() => {
       const mChartCard = el('div','card');
       mChartCard.innerHTML = `<div class="row between"><h3>Evolución</h3>
         <select id="m-pick" class="day-sel">${Logic.MEASURE_DEFS.filter(([k])=>latest[k]).map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select></div>
-        <canvas id="c-m" height="170"></canvas><div id="m-hist"></div>`;
+        <div class="chartbox"><canvas id="c-m"></canvas></div><div id="m-hist"></div>`;
       wrap.appendChild(mChartCard);
       const pick = mChartCard.querySelector('#m-pick');
       const histBox = mChartCard.querySelector('#m-hist');

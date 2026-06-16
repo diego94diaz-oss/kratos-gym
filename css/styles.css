@@ -226,6 +226,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .list-item:last-child { border-bottom: none; }
 .empty { text-align: center; color: var(--muted); padding: 34px 10px; }
 canvas { max-width: 100%; }
+.chartbox { position: relative; height: 200px; margin-top: 8px; }
+.chartbox canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; }
 .fab {
   position: fixed; right: 16px; bottom: 84px; background: var(--grad); color: #04201d; border: none;
   border-radius: 50%; width: 58px; height: 58px; font-size: 28px; font-weight: 700;
