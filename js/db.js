@@ -250,6 +250,10 @@ const DB = (() => {
   async function getCardio(){ const { data } = await sb.from('cardio_sessions').select('*').eq('user_id', uid()).order('fecha', { ascending:false }); return data||[]; }
   async function deleteCardio(id){ await sb.from('cardio_sessions').delete().eq('id', id).eq('user_id', uid()); }
 
+  // ---- Rehab (dolor por lesión) ----
+  async function addRehab(r){ r.user_id=uid(); const { error } = await sb.from('rehab_logs').insert(r); if(error) throw error; }
+  async function getRehab(){ const { data } = await sb.from('rehab_logs').select('*').eq('user_id', uid()).order('fecha'); return data||[]; }
+
   return {
     configured, init, currentUser, signIn, signUp, signOut, onAuth, uid,
     getProfile, saveProfile,
@@ -265,5 +269,6 @@ const DB = (() => {
     getGoals, addGoal, updateGoal, deleteGoal,
     savePushSub, deletePushSub, saveReminders,
     addCardio, getCardio, deleteCardio,
+    addRehab, getRehab,
   };
 })();

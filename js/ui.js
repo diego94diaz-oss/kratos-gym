@@ -400,7 +400,7 @@ const UI = (() => {
   }
 
   // ---------- AVANCES ----------
-  function renderAvances({ sets, exercises, weights = [], foodLogs = [], profile, lastWeight }) {
+  function renderAvances({ sets, exercises, weights = [], foodLogs = [], cardio = [], habitLogs = [], profile, lastWeight }) {
     const wrap = el('div');
     if (!sets.length) { wrap.appendChild(el('div','empty','Aún no hay sesiones. Registra tu primera en "Hoy".')); return wrap; }
 
@@ -463,6 +463,16 @@ const UI = (() => {
       prCard.appendChild(it);
     });
     wrap.appendChild(prCard);
+
+    // Logros
+    const achs = Logic.buildAchievements({ sets, foodLogs, cardio, habitLogs });
+    const unlocked = achs.filter(a=>a.unlocked).length;
+    const aCard = el('div','card');
+    aCard.innerHTML = `<div class="row between"><h3 style="margin:0">🏅 Logros</h3><span class="pill a">${unlocked}/${achs.length}</span></div>
+      <div class="ach-grid" style="margin-top:10px">${achs.map(a=>`
+        <div class="ach ${a.unlocked?'on':'off'}"><div class="a-ic">${a.icon}</div>
+          <div class="a-tt">${esc(a.titulo)}</div><div class="a-ds">${esc(a.desc)}${a.unlocked?'':` · ${a.prog}`}</div></div>`).join('')}</div>`;
+    wrap.appendChild(aCard);
 
     setTimeout(() => {
       drawVolume(sets);
@@ -858,10 +868,10 @@ const UI = (() => {
     <option value="">—</option>${[1,2,3,4,5].map(n=>`<option value="${n}" ${Number(val)===n?'selected':''}>${n}</option>`).join('')}</select>`; }
 
   function renderSalud(p){
-    const { sleep, wellness, habits, habitLogs, injuries, goals, ctx, profile, cardio = [],
+    const { sleep, wellness, habits, habitLogs, injuries, goals, ctx, profile, cardio = [], rehab = [],
       onSleep, onWellness, onAddHabit, onDeleteHabit, onToggleHabit,
       onAddInjury, onUpdateInjury, onDeleteInjury, onAddGoal, onDeleteGoal,
-      onCardio, onDeleteCardio } = p;
+      onCardio, onDeleteCardio, onRehab } = p;
     const wrap = el('div');
     const today = Logic.todayISO();
     const sToday = sleep.find(x=>x.fecha===today) || {};
@@ -1033,6 +1043,31 @@ const UI = (() => {
       if(inj.estado==='activa') it.querySelector('.ok').onclick = () => onUpdateInjury(inj.id, { estado:'recuperada', fecha_fin:today });
       it.querySelector('.dl').onclick = () => { if(confirm('¿Eliminar lesión?')) onDeleteInjury(inj.id); };
       iCard.appendChild(it);
+
+      // Rehab: registro de dolor + semáforo de carga segura (solo lesiones activas)
+      if (inj.estado === 'activa'){
+        const logs = rehab.filter(r => r.injury_id === inj.id).sort((a,b)=> a.fecha<b.fecha?-1:1);
+        const lastPain = logs.length ? logs[logs.length-1].dolor : null;
+        const sem = lastPain==null ? '' : lastPain<=3 ? 'g' : lastPain<=6 ? 'y' : 'r';
+        const safe = lastPain==null ? 'Registra tu dolor para una guía de carga.'
+          : lastPain<=3 ? 'Dolor bajo: puedes progresar carga con cuidado.'
+          : lastPain<=6 ? 'Dolor moderado: mantén carga, sin forzar.'
+          : 'Dolor alto: reduce carga o descansa. Si persiste, consulta.';
+        const rb = el('div'); rb.style.cssText = 'padding:4px 0 10px 8px;border-left:2px solid var(--line);margin:0 0 8px 4px';
+        rb.innerHTML = `<div class="ex-meta">${sem?`<span class="sem ${sem}"></span>`:''}${lastPain!=null?`Último dolor: ${lastPain}/10 · `:''}${safe}</div>
+          <div class="row" style="gap:8px;margin-top:6px">
+            <div style="width:90px"><label class="help">Dolor 0-10</label><input class="rh-d" type="number" min="0" max="10"></div>
+            <div style="flex:1"><label class="help">Carga</label><select class="rh-c day-sel" style="width:100%">
+              <option value="descanso">Descanso</option><option value="suave">Suave</option><option value="moderada">Moderada</option><option value="normal">Normal</option></select></div>
+            <div style="align-self:flex-end"><button class="btn btn-ghost rh-save">Registrar</button></div>
+          </div>`;
+        rb.querySelector('.rh-save').onclick = () => {
+          const d = rb.querySelector('.rh-d').value;
+          if (d==='') return toast('Indica el dolor 0-10');
+          onRehab({ injury_id:inj.id, fecha:today, dolor:Number(d), carga:rb.querySelector('.rh-c').value });
+        };
+        iCard.appendChild(rb);
+      }
     });
     const inf = el('div'); inf.style.marginTop='10px';
     inf.innerHTML = `<div class="divider"></div>

@@ -4,7 +4,7 @@
 (() => {
   const $ = UI.$;
   let cache = { exercises:[], sets:[], weights:[], measurements:[], foodLogs:[], photos:[],
-                sleep:[], wellness:[], habits:[], habitLogs:[], injuries:[], goals:[], cardio:[], profile:null };
+                sleep:[], wellness:[], habits:[], habitLogs:[], injuries:[], goals:[], cardio:[], rehab:[], profile:null };
   let currentTab = 'hoy';
   let pickedDay = null;
   let trainingMode = false;
@@ -63,6 +63,7 @@
     try { cache.injuries  = await DB.getInjuries();  } catch { cache.injuries = []; }
     try { cache.goals     = await DB.getGoals();     } catch { cache.goals = []; }
     try { cache.cardio    = await DB.getCardio();    } catch { cache.cardio = []; }
+    try { cache.rehab     = await DB.getRehab();     } catch { cache.rehab = []; }
   }
 
   async function ensureSeed(){
@@ -107,7 +108,8 @@
         onDelete: async id => { await DB.deleteExercise(id); cache.exercises=await DB.getExercises(); render(); UI.toast('Eliminado'); } }));
     } else if (currentTab==='avances') {
       UI.setMain(UI.renderAvances({ sets:cache.sets, exercises:cache.exercises,
-        weights:cache.weights, foodLogs:cache.foodLogs, profile:cache.profile, lastWeight:lastWeightKg() }));
+        weights:cache.weights, foodLogs:cache.foodLogs, cardio:cache.cardio, habitLogs:cache.habitLogs,
+        profile:cache.profile, lastWeight:lastWeightKg() }));
     } else if (currentTab==='peso') {
       UI.setMain(UI.renderPeso({ weights:cache.weights, profile:cache.profile, measurements:cache.measurements, photos:cache.photos,
         onAdd: async w => { const ok = await tryWrite('weight', ()=>DB.addWeight(w), w,
@@ -135,15 +137,16 @@
         cache.sleep=await DB.getSleep(); cache.wellness=await DB.getWellness();
         cache.habits=await DB.getHabits(); cache.habitLogs=await DB.getHabitLogs();
         cache.injuries=await DB.getInjuries(); cache.goals=await DB.getGoals();
-        cache.cardio=await DB.getCardio();
+        cache.cardio=await DB.getCardio(); cache.rehab=await DB.getRehab();
         Offline.saveCache(cache);
       } catch(e){ UI.toast('Error: '+(e.message||'')); } render(); };
       UI.setMain(UI.renderSalud({
         sleep:cache.sleep, wellness:cache.wellness, habits:cache.habits, habitLogs:cache.habitLogs,
-        injuries:cache.injuries, goals:cache.goals, cardio:cache.cardio, profile:cache.profile,
+        injuries:cache.injuries, goals:cache.goals, cardio:cache.cardio, rehab:cache.rehab, profile:cache.profile,
         ctx:{ lastWeight:lastWeightKg(), measurements:cache.measurements, sets:cache.sets },
         onCardio: async c => { await DB.addCardio(c); await reload(); UI.toast('Cardio registrado'); },
         onDeleteCardio: async id => { await DB.deleteCardio(id); await reload(); },
+        onRehab: async r => { await DB.addRehab(r); await reload(); UI.toast('Dolor registrado'); },
         onSleep: async s => { await DB.addSleep(s); await reload(); UI.toast('Sueño guardado'); },
         onWellness: async w => { await DB.addWellness(w); await reload(); UI.toast('Estado guardado'); },
         onAddHabit: async h => { await DB.addHabit(h); await reload(); },

@@ -199,6 +199,17 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .scan-ov .scan-bar { padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); background: var(--bg); display: flex; gap: 10px; align-items: center; justify-content: space-between; }
 .scan-ov .scan-hint { color: #fff; position: absolute; top: max(16px, env(safe-area-inset-top)); left: 0; right: 0; text-align: center; font-weight: 600; text-shadow: 0 1px 4px rgba(0,0,0,.8); }
 .scan-frame { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 70%; height: 28%; border: 3px solid var(--primary); border-radius: 14px; box-shadow: 0 0 0 100vmax rgba(0,0,0,.45); }
+
+/* Logros */
+.ach-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.ach { border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: var(--card-2); }
+.ach.on { background: var(--grad-soft); border-color: rgba(45,212,191,.35); }
+.ach.off { opacity: .55; }
+.ach .a-ic { font-size: 1.6rem; }
+.ach .a-tt { font-weight: 700; font-size: .9rem; margin-top: 2px; }
+.ach .a-ds { font-size: 11px; color: var(--muted); }
+.sem { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+.sem.g { background: var(--primary); } .sem.y { background: var(--warn); } .sem.r { background: var(--danger); }
 .add-set { width: 100%; margin-top: 4px; }
 
 .list-item { display: flex; justify-content: space-between; padding: 11px 0; border-bottom: 1px solid var(--line); }

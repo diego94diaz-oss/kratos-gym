@@ -433,7 +433,7 @@ const Logic = (() => {
            e1rmByDate, stalledExercises, deloadAdvice, adaptiveTDEE, adaptiveAdvice,
            daysSinceTraining, sessionsInLast, loggingStreak, buildAlerts, weeklyReport,
            habitStreak, readiness, goalCurrentValue, goalProgress,
-           maxHR, hrZones, zoneOf };
+           maxHR, hrZones, zoneOf, buildAchievements };
 
   // ---- Salud / hábitos / objetivos (Fase 2 batch B) ----
   function habitStreak(habitLogs, habitId){
@@ -475,5 +475,28 @@ const Logic = (() => {
   function zoneOf(fc, edad){
     const zs = hrZones(edad); if (!zs || !fc) return null;
     return (zs.find(z => fc <= z.hi) || zs[zs.length-1]).n;
+  }
+
+  // ---- Logros (gamificación, calculados de los datos) ----
+  function buildAchievements({ sets = [], foodLogs = [], cardio = [], habitLogs = [] }){
+    const sessions = new Set(effSets(sets).map(s => s.fecha)).size;
+    const prs = Object.keys(prsByExercise(sets)).length;
+    const totalVol = Math.round(effSets(sets).reduce((a,s)=>a + s.peso_kg*s.reps, 0));
+    const maxDayVol = Math.max(0, ...Object.values((() => { const m={}; effSets(sets).forEach(s=>{ m[s.fecha]=(m[s.fecha]||0)+s.peso_kg*s.reps; }); return m; })()));
+    const nutDays = new Set(foodLogs.map(l=>l.fecha)).size;
+    const cardios = cardio.length;
+    const def = (icon, titulo, desc, unlocked, prog) => ({ icon, titulo, desc, unlocked, prog });
+    return [
+      def('🎯','Primer paso','Registra tu primera sesión', sessions>=1, `${Math.min(sessions,1)}/1`),
+      def('🔟','Constante','10 sesiones de entrenamiento', sessions>=10, `${Math.min(sessions,10)}/10`),
+      def('💯','Centurión','100 sesiones', sessions>=100, `${Math.min(sessions,100)}/100`),
+      def('🏆','Rompe récords','Logra tu primer PR', prs>=1, `${Math.min(prs,1)}/1`),
+      def('🦾','Máquina de PRs','10 récords personales', prs>=10, `${Math.min(prs,10)}/10`),
+      def('🏋️','Una tonelada','1.000 kg de volumen en una sesión', maxDayVol>=1000, `${Math.round(Math.min(maxDayVol,1000))}/1000 kg`),
+      def('🗿','Titán','50.000 kg de volumen total', totalVol>=50000, `${Math.round(totalVol/1000)}/50 t`),
+      def('🥗','Nutrido','Registra nutrición 7 días', nutDays>=7, `${Math.min(nutDays,7)}/7`),
+      def('🏃','Cardio iniciado','Primera sesión de cardio', cardios>=1, `${Math.min(cardios,1)}/1`),
+      def('🔥','Maratonista','10 sesiones de cardio', cardios>=10, `${Math.min(cardios,10)}/10`),
+    ];
   }
 })();
