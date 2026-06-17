@@ -223,15 +223,20 @@
     UI.toast('Guardado'); setTab('rutina');
   }
 
+  let saving = false;
   async function saveSession(rows){
-    const prs = Logic.newPRs(cache.sets, rows);
-    const ok = await tryWrite('sets', ()=>DB.addSets(rows), rows,
-      ()=>{ cache.sets = cache.sets.concat(rows.map(r=>({...r}))); });
-    if (ok) { cache.sets = await DB.getAllSets(); Offline.saveCache(cache); }
-    pickedDay = null; // próxima vez alterna
-    trainingMode = false; relWake();
-    if (ok) UI.toast(prs.length ? '🏆 ¡Nuevo PR en ' + prs[0].ejercicio + '!' : '💪 Sesión guardada');
-    setTab('avances');
+    if (saving) return; // evita doble guardado (doble toque / reentrada)
+    saving = true;
+    try {
+      const prs = Logic.newPRs(cache.sets, rows);
+      const ok = await tryWrite('sets', ()=>DB.addSets(rows), rows,
+        ()=>{ cache.sets = cache.sets.concat(rows.map(r=>({...r}))); });
+      if (ok) { cache.sets = await DB.getAllSets(); Offline.saveCache(cache); }
+      pickedDay = null; // próxima vez alterna
+      trainingMode = false; relWake();
+      if (ok) UI.toast(prs.length ? '🏆 ¡Nuevo PR en ' + prs[0].ejercicio + '!' : '💪 Sesión guardada');
+      setTab('avances');
+    } finally { saving = false; }
   }
 
   // ---------- CSV (esquema Kratos) ----------

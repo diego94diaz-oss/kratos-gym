@@ -125,6 +125,8 @@ const UI = (() => {
         });
       });
       if (!rows.length) return toast('Registra al menos una serie');
+      if (saveBtn.disabled) return;
+      saveBtn.disabled = true; saveBtn.textContent = 'Guardando…';
       clearInterval(sessionTimer);
       onSave(rows);
     };
