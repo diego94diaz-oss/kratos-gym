@@ -495,9 +495,10 @@ const UI = (() => {
     const totalSesiones = new Set(sets.map(s=>s.fecha)).size;
     const prs = Logic.prsByExercise(sets);
     const stats = el('div','card');
-    stats.innerHTML = `<div class="grid3">
+    stats.innerHTML = `<div class="section-title" style="margin-top:0">Totales (histórico)</div>
+      <div class="grid3">
       <div class="stat"><div class="big">${totalSesiones}</div><div class="label">Sesiones</div></div>
-      <div class="stat"><div class="big">${sets.length}</div><div class="label">Series</div></div>
+      <div class="stat"><div class="big">${sets.length}</div><div class="label">Series totales</div></div>
       <div class="stat"><div class="big">${Object.keys(prs).length}</div><div class="label">PRs</div></div></div>`;
     wrap.appendChild(stats);
 
