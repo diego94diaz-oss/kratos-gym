@@ -1189,7 +1189,7 @@ const UI = (() => {
     const inf = el('div'); inf.style.marginTop='10px';
     inf.innerHTML = `<div class="divider"></div>
       <div class="row" style="gap:8px"><input id="i-zona" placeholder="Zona (ej: pulgar derecho)" style="flex:1">
-        <div style="width:90px"><label class="help">Sev.</label>${rating('i-sev','')}</div></div>
+        <div style="width:120px"><label class="help">Gravedad 1-5</label>${rating('i-sev','')}</div></div>
       <input id="i-tipo" placeholder="Tipo (tendinopatía, contractura...)" style="margin-top:8px">
       <input id="i-notas" placeholder="Notas (opcional)" style="margin-top:8px">
       <button class="btn btn-primary" id="i-add" style="width:100%;margin-top:10px">Registrar lesión</button>`;
