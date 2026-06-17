@@ -429,9 +429,10 @@ const Logic = (() => {
   // Informe semanal
   function weeklyReport({ sets, weights, foodLogs, exercises, profile, lastWeight }){
     const since = isoDaysAgo(7);
-    const week = effSets(sets).filter(s => s.fecha >= since);
+    // Series efectivas = todas menos calentamiento (incluye peso corporal/tiempo).
+    const week = sets.filter(s => s.fecha >= since && s.set_type !== 'calentamiento');
     const sessions = new Set(week.map(s=>s.fecha)).size;
-    const volume = Math.round(week.reduce((a,s)=>a + s.peso_kg*s.reps, 0));
+    const volume = Math.round(week.reduce((a,s)=>a + (s.peso_kg||0)*s.reps, 0));
     const setsCount = week.length;
     const grupoOf = {}; exercises.forEach(e => grupoOf[e.nombre] = e.grupo || 'otro');
     const perMuscle = {};
