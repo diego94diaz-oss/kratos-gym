@@ -475,7 +475,7 @@ const UI = (() => {
       <div class="grid3">
         <div class="stat"><div class="big" style="font-size:1.5rem">${r.sessions}</div><div class="label">Sesiones</div></div>
         <div class="stat"><div class="big" style="font-size:1.5rem">${r.setsCount}</div><div class="label">Series</div></div>
-        <div class="stat"><div class="big" style="font-size:1.5rem">${Math.round(r.volume/1000)}t</div><div class="label">Volumen</div></div>
+        <div class="stat"><div class="big" style="font-size:1.5rem">${r.volume>=1000?(r.volume/1000).toFixed(1)+'t':r.volume+' kg'}</div><div class="label">Volumen</div></div>
       </div>
       ${muscles.length?`<p class="help" style="margin-top:10px">Series por grupo: ${muscles.map(([g,n])=>`${esc(g)} ${n}`).join(' · ')}</p>`:''}
       ${r.wDelta!=null?`<div class="ex-meta">⚖️ Peso: ${r.wDelta>0?'+':''}${r.wDelta} kg esta semana</div>`:''}
