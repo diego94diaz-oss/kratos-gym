@@ -693,13 +693,20 @@ const UI = (() => {
 
     // --- Fotos de progreso ---
     const pCard = el('div','card');
-    pCard.innerHTML = `<div class="row between"><h3>📸 Fotos de progreso</h3>
-        <label class="btn btn-ghost" style="cursor:pointer">+ Foto<input type="file" id="ph-file" accept="image/*" capture="environment" hidden></label></div>
+    pCard.innerHTML = `<div class="row between"><h3>📸 Fotos de progreso</h3></div>
       <div class="row" style="gap:8px;margin-top:8px">
         <select id="ph-pose" class="day-sel"><option value="frente">Frente</option><option value="lado">Lado</option><option value="espalda">Espalda</option></select>
         <input id="ph-fecha" type="date" value="${Logic.todayISO()}">
       </div>
-      <p class="help">Privadas: se guardan en tu almacenamiento personal con acceso restringido (solo tú).</p>
+      <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+        <label class="btn btn-primary" style="cursor:pointer;flex:1;min-width:140px">🖼️ Elegir de galería
+          <input type="file" id="ph-gallery" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden>
+        </label>
+        <label class="btn btn-ghost" style="cursor:pointer;flex:1;min-width:140px">📷 Tomar foto
+          <input type="file" id="ph-camera" accept="image/*" capture="environment" hidden>
+        </label>
+      </div>
+      <p class="help">Puedes subir una foto existente desde la galería o sacar una nueva con la cámara. Privadas: se guardan en tu almacenamiento personal con acceso restringido (solo tú).</p>
       <div class="photo-grid" id="ph-grid" style="margin-top:10px"></div>`;
     const pgrid = pCard.querySelector('#ph-grid');
     if(!photos.length) pgrid.innerHTML = '<div class="empty" style="grid-column:1/-1">Aún no hay fotos. Sube la primera para comparar tu progreso.</div>';
@@ -710,10 +717,13 @@ const UI = (() => {
       cell.querySelector('.pdel').onclick = () => { if(confirm('¿Eliminar foto?')) onDeletePhoto(ph.id, ph.path); };
       pgrid.appendChild(cell);
     });
-    pCard.querySelector('#ph-file').onchange = e => {
+    const handlePhotoPick = e => {
       const f = e.target.files[0];
-      if(f) onAddPhoto(f, pCard.querySelector('#ph-pose').value, pCard.querySelector('#ph-fecha').value);
+      if (f) onAddPhoto(f, pCard.querySelector('#ph-pose').value, pCard.querySelector('#ph-fecha').value);
+      e.target.value = '';
     };
+    pCard.querySelector('#ph-gallery').onchange = handlePhotoPick;
+    pCard.querySelector('#ph-camera').onchange = handlePhotoPick;
     wrap.appendChild(pCard);
 
     return wrap;
