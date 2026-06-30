@@ -132,36 +132,22 @@ const DB = (() => {
     await sb.from('measurements').delete().eq('id', id).eq('user_id', uid());
   }
 
-  // ---- Nutrición: búsqueda Open Food Facts (red, sin auth) ----
+  // ---- Nutrición: búsqueda vía Edge Function (proxy a Open Food Facts) ----
+  const SEARCH_FN = 'https://ivzzgeoeygggaoazcoeq.supabase.co/functions/v1/search-foods';
   async function searchFoods(term) {
-    const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(term)}`
-      + `&search_simple=1&action=process&json=1&page_size=24`
-      + `&fields=product_name,brands,code,nutriments,serving_quantity`;
-    const r = await fetch(url);
-    const j = await r.json();
-    return (j.products || []).map(p => ({
-      nombre: (p.product_name || '').trim() || '(sin nombre)',
-      marca: (p.brands || '').split(',')[0] || '',
-      barcode: p.code || '',
-      kcal_100: p.nutriments?.['energy-kcal_100g'] ?? null,
-      prot_100: p.nutriments?.proteins_100g ?? null,
-      grasa_100: p.nutriments?.fat_100g ?? null,
-      carbo_100: p.nutriments?.carbohydrates_100g ?? null,
-      fibra_100: p.nutriments?.fiber_100g ?? null,
-      porcion_g: p.serving_quantity ? Number(p.serving_quantity) : null,
-      fuente: 'off',
-    })).filter(p => p.kcal_100 != null && p.nombre !== '(sin nombre)');
+    const r = await fetch(`${SEARCH_FN}?q=${encodeURIComponent(term)}`, {
+      headers: { 'Authorization': `Bearer ${KRATOS_CONFIG.SUPABASE_ANON_KEY}` }
+    });
+    if (!r.ok) throw new Error('search failed');
+    return r.json();
   }
   async function searchFoodByBarcode(code) {
-    const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,brands,code,nutriments,serving_quantity`);
-    const j = await r.json();
-    if (j.status !== 1 || !j.product) return null;
-    const p = j.product;
-    return { nombre:(p.product_name||'').trim()||'(sin nombre)', marca:(p.brands||'').split(',')[0]||'',
-      barcode:p.code||code, kcal_100:p.nutriments?.['energy-kcal_100g']??null,
-      prot_100:p.nutriments?.proteins_100g??null, grasa_100:p.nutriments?.fat_100g??null,
-      carbo_100:p.nutriments?.carbohydrates_100g??null, fibra_100:p.nutriments?.fiber_100g??null,
-      porcion_g:p.serving_quantity?Number(p.serving_quantity):null, fuente:'off' };
+    const r = await fetch(`${SEARCH_FN}?barcode=${encodeURIComponent(code)}`, {
+      headers: { 'Authorization': `Bearer ${KRATOS_CONFIG.SUPABASE_ANON_KEY}` }
+    });
+    if (!r.ok) return null;
+    const arr = await r.json();
+    return arr[0] || null;
   }
 
   // ---- Food logs ----
