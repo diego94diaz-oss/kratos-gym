@@ -1,5 +1,5 @@
 // Service worker — network-first para que las actualizaciones lleguen siempre.
-const CACHE = 'kratos-gym-v24';
+const CACHE = 'kratos-gym-v25';
 const ASSETS = [
   './', './index.html', './css/styles.css',
   './js/db.js', './js/offline.js', './js/push.js', './js/library.js', './js/seed.js', './js/logic.js', './js/ui.js', './js/app.js',
@@ -33,7 +33,7 @@ self.addEventListener('notificationclick', e => {
 
 self.addEventListener('fetch', e => {
   const url = e.request.url;
-  if (url.includes('supabase') || e.request.method !== 'GET') return;
+  if (url.includes('supabase') || url.includes('openfoodfacts') || e.request.method !== 'GET') return;
   // Same-origin: red primero (cae a caché si estás offline)
   if (url.startsWith(self.location.origin)) {
     e.respondWith(
