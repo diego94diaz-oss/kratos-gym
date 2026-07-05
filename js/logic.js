@@ -450,17 +450,6 @@ const Logic = (() => {
     return { sessions, volume, setsCount, perMuscle, prs, wDelta, nDays, avgKcal, avgProt };
   }
 
-  return { todayISO, nextDay, lastSessionOf, recommend, prsByExercise, newPRs,
-           volumeByDate, weeklyAvg, weeklyTrend, bodyAdvice,
-           MEASURE_DEFS, latestMeasures, measureSeries, bodyFatNavy, composition,
-           bodyFatBMI, bestBodyFat, projectWeight,
-           MEALS, ACTIVITY, bmrMifflin, nutritionTargets, effectiveTargets, macrosFor, sumFoods,
-           SET_TYPES, rirFromRpe, rpeFromRir, restSuggestion,
-           e1rmByDate, stalledExercises, deloadAdvice, adaptiveTDEE, adaptiveAdvice,
-           daysSinceTraining, sessionsInLast, loggingStreak, buildAlerts, weeklyReport,
-           habitStreak, readiness, goalCurrentValue, goalProgress,
-           maxHR, hrZones, zoneOf, buildAchievements };
-
   // ---- Salud / hábitos / objetivos (Fase 2 batch B) ----
   function habitStreak(habitLogs, habitId){
     const set = new Set(habitLogs.filter(l => l.habit_id === habitId).map(l => l.fecha));
@@ -525,4 +514,15 @@ const Logic = (() => {
       def('🔥','Maratonista','10 sesiones de cardio', cardios>=10, `${Math.min(cardios,10)}/10`),
     ];
   }
+
+  return { todayISO, nextDay, lastSessionOf, recommend, prsByExercise, newPRs,
+           volumeByDate, weeklyAvg, weeklyTrend, bodyAdvice,
+           MEASURE_DEFS, latestMeasures, measureSeries, bodyFatNavy, composition,
+           bodyFatBMI, bestBodyFat, projectWeight,
+           MEALS, ACTIVITY, bmrMifflin, nutritionTargets, effectiveTargets, macrosFor, sumFoods,
+           SET_TYPES, rirFromRpe, rpeFromRir, restSuggestion,
+           e1rmByDate, stalledExercises, deloadAdvice, adaptiveTDEE, adaptiveAdvice,
+           daysSinceTraining, sessionsInLast, loggingStreak, buildAlerts, weeklyReport,
+           habitStreak, readiness, goalCurrentValue, goalProgress,
+           maxHR, hrZones, zoneOf, buildAchievements };
 })();

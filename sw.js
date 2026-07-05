@@ -1,8 +1,8 @@
 // Service worker — network-first para que las actualizaciones lleguen siempre.
-const CACHE = 'kratos-gym-v25';
+const CACHE = 'kratos-gym-v26';
 const ASSETS = [
   './', './index.html', './css/styles.css',
-  './js/db.js', './js/offline.js', './js/push.js', './js/library.js', './js/seed.js', './js/logic.js', './js/ui.js', './js/app.js',
+  './js/config.js', './js/db.js', './js/offline.js', './js/push.js', './js/library.js', './js/seed.js', './js/logic.js', './js/ui.js', './js/app.js',
   './manifest.json', './assets/icon.svg'
 ];
 self.addEventListener('install', e => {
@@ -26,7 +26,7 @@ self.addEventListener('notificationclick', e => {
   e.notification.close();
   const url = (e.notification.data && e.notification.data.url) || './';
   e.waitUntil(self.clients.matchAll({ type: 'window' }).then(cs => {
-    for (const c of cs) { if ('focus' in c) return c.focus(); }
+    for (const c of cs) { if ('focus' in c) return c.focus().then(() => c.navigate(url)); }
     return self.clients.openWindow(url);
   }));
 });
