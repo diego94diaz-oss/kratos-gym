@@ -1,9 +1,9 @@
 // Service worker — network-first para que las actualizaciones lleguen siempre.
-const CACHE = 'kratos-gym-v26';
+const CACHE = 'kratos-gym-v27';
 const ASSETS = [
   './', './index.html', './css/styles.css',
   './js/config.js', './js/db.js', './js/offline.js', './js/push.js', './js/library.js', './js/seed.js', './js/logic.js', './js/ui.js', './js/app.js',
-  './manifest.json', './assets/icon.svg'
+  './manifest.json', './assets/icon.svg', './assets/icon-192.png', './assets/icon-512.png'
 ];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
