@@ -4,20 +4,27 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#07080c" />
-  <title>Kratos Gym</title>
+  <title>Entrenamiento</title>
   <link rel="manifest" href="manifest.json" />
-  <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
-  <link rel="apple-touch-icon" href="assets/icon-192.png" />
+  <link rel="icon" href="assets/favicon-32.png?v=20261001" type="image/png">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png?v=20261001">
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" />
   <link rel="stylesheet" href="css/styles.css" />
+
+<style id="app-branding">
+.app-brand-image{width:48px;height:48px;object-fit:contain;display:block;flex-shrink:0}
+.logo:has(.app-brand-image){width:48px;height:48px;background:none;border-radius:0;box-shadow:none;padding:0}
+.brand,.topbar-brand{display:flex;align-items:center;gap:10px}
+@media(max-width:640px){.app-brand-image,.logo:has(.app-brand-image){width:40px;height:40px}}
+</style>
 </head>
 <body>
   <!-- ===== LOGIN ===== -->
   <div id="auth-view" class="auth-view hidden">
     <div class="auth-card">
-      <div class="brand"><span class="brand-mark">⚔️</span><h1>Kratos Gym</h1></div>
+      <div class="brand"><img class="app-brand-image" src="assets/icon-192.png" alt="" width="48" height="48"><h1>Entrenamiento</h1></div>
       <p class="muted">Tu entrenamiento, en cualquier dispositivo.</p>
       <form id="auth-form">
         <input id="auth-email" type="email" placeholder="Email" autocomplete="email" required />
@@ -40,7 +47,7 @@
   <!-- ===== APP ===== -->
   <div id="app-view" class="app-view hidden">
     <header class="topbar">
-      <div class="topbar-brand"><span>⚔️</span> Kratos Gym</div>
+      <div class="topbar-brand"><img class="app-brand-image" src="assets/icon-192.png" alt="" width="48" height="48"> Entrenamiento</div>
       <button id="theme-btn" class="icon-btn" title="Tema">🌙</button>
     </header>
 

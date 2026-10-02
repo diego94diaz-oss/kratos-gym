@@ -38,3 +38,7 @@ Abre la URL → **Crear cuenta** (tu email) → la app precarga tu rutina A/B y 
 
 ## Progresión (doble progresión)
 Si completas **todas** las series en el tope del rango de reps con RIR adecuado → sube carga (+incremento del ejercicio). Si no llegas al mínimo → mantén/baja. PRs por 1RM estimado (Epley).
+
+
+### 2026-10-01 — Nombres y logos del ecosistema
+Identidad actual: Mis Apps, Finanzas, Inversiones, Entrenamiento y Salud. Se integraron los PNG proporcionados por el usuario en encabezados/login, favicons, iconos PWA y accesos de Windows. Original conservado como `brand-source.png` junto a los iconos. Se conservan URLs e identificadores internos para mantener instalaciones, datos y sesiones. Caché del shell renovada.
