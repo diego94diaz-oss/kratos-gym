@@ -22,8 +22,7 @@
 
 ## ⏳ Pendientes y dudas abiertas
 
-- **Para completar la renovación:** correr `db/fase4-renovacion.sql` (sin ella no se guardan micronutrientes ni notas de sesión) y desplegar `search-foods` y `send-reminders`. La CLI de Supabase no tiene sesión iniciada en este PC.
 - **Por revisar en uso real:** el perfil puede traer objetivos manuales antiguos; la app avisa si se alejan del cálculo.
-- **Agente Kratos sin ubicar en este PC:** la documentación apunta a `C:\Users\diego\.openclaw\workspace\kratos\` y `gymdb.mjs`, y esa carpeta no existe aquí (comprobado 2026-10-31). Falta saber si sigue activo y dónde está la clave VAPID privada.
-- **Sin verificar:** las tablas de las fases 1 a 3 existen en Supabase (comprobado 2026-10-31); falta confirmar si el cron `kratos-reminders` sigue corriendo y si la clave VAPID sigue vigente.
+- **Agente Kratos sin ubicar en este PC:** la documentación apunta a `C:\Users\diego\.openclaw\workspace\kratos\` y `gymdb.mjs`, y esa carpeta no existe aquí (comprobado 2026-10-31). Falta saber si sigue activo.
+- **Comprobado 2026-10-31:** migración fase 4 aplicada (columnas y RLS verificadas), `search-foods` y `send-reminders` desplegadas, cron `kratos-reminders` activo cada 30 minutos y secrets VAPID presentes. Falta recibir un recordatorio real en el teléfono.
 - **Ecosistema:** `docs/ROADMAP-PLATAFORMA-INTEGRAL.md` propone sueño, PA, medicación e hidratación, que se solapan con Mi Salud. Antes de ampliar esos módulos, definir la fuente de verdad (`../CLAUDE.md` §7).
