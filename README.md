@@ -1,4 +1,4 @@
-# ⚔️ Kratos Gym
+# Entrenamiento (Kratos Gym)
 
 App personal de entrenamiento de Diego. Registra rutinas, series, reps, peso y RIR; calcula **progresión de carga** (cuándo subir/mantener/bajar), detecta **PRs**, grafica avances y monitorea el **peso corporal** según tu objetivo (recomposición). Compatible con el modelo de datos del coach **Kratos**.
 
@@ -7,7 +7,9 @@ App personal de entrenamiento de Diego. Registra rutinas, series, reps, peso y R
 - 🔁 Export/Import CSV en el esquema exacto de Kratos (`entrenamientos.csv`, `peso_corporal.csv`)
 
 ## Stack
-HTML/CSS/JS vanilla (sin build) · Chart.js · Supabase (auth + Postgres) · GitHub Pages.
+HTML/CSS/JS vanilla (sin build) · Chart.js · Supabase compartido del ecosistema · GitHub Pages. Peso, cintura, sueño y agua viven en Mi Salud. Detalle en `CLAUDE.md`.
+
+Pruebas: `node --test tests/logic.test.mjs`.
 
 ## Puesta en marcha
 
@@ -42,3 +44,6 @@ Si completas **todas** las series en el tope del rango de reps con RIR adecuado 
 
 ### 2026-10-01 — Nombres y logos del ecosistema
 Identidad actual: Mis Apps, Finanzas, Inversiones, Entrenamiento y Salud. Se integraron los PNG proporcionados por el usuario en encabezados/login, favicons, iconos PWA y accesos de Windows. Original conservado como `brand-source.png` junto a los iconos. Se conservan URLs e identificadores internos para mantener instalaciones, datos y sesiones. Caché del shell renovada.
+
+### 2026-10-31 — Renovación integral
+Nuevo diseño para celular, sesiones libres, nutrición diaria completa, indicadores con evidencia, conexión con Mi Salud y avisos que se actualizan. Requiere `db/fase4-renovacion.sql` para guardar micronutrientes y notas de sesión.

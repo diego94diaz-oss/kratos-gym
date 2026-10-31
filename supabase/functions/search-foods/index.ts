@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
     let result;
     if (barcode) {
       const r = await fetch(
-        `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json?fields=product_name,brands,code,nutriments,serving_quantity`,
+        `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json?fields=product_name,brands,code,nutriments,serving_quantity,nova_group`,
         { headers: { 'User-Agent': 'KratosGym/1.0' } }
       );
       const j = await r.json();
@@ -35,7 +35,7 @@ Deno.serve(async (req) => {
     } else {
       const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(term!)}`
         + `&search_simple=1&action=process&json=1&page_size=24`
-        + `&fields=product_name,brands,code,nutriments,serving_quantity`;
+        + `&fields=product_name,brands,code,nutriments,serving_quantity,nova_group`;
       const r = await fetch(url, { headers: { 'User-Agent': 'KratosGym/1.0' } });
       const j = await r.json();
       result = (j.products || []).map((p: any) => mapProduct(p)).filter((p: any) => p.kcal_100 != null && p.nombre !== '(sin nombre)');
@@ -59,6 +59,10 @@ function mapProduct(p: any, fallbackCode?: string) {
     grasa_100: p.nutriments?.fat_100g ?? null,
     carbo_100: p.nutriments?.carbohydrates_100g ?? null,
     fibra_100: p.nutriments?.fiber_100g ?? null,
+    azucar_100: p.nutriments?.sugars_100g ?? null,
+    sat_100: p.nutriments?.['saturated-fat_100g'] ?? null,
+    sodio_100: p.nutriments?.sodium_100g != null ? Math.round(p.nutriments.sodium_100g * 1000) : null,
+    nova: p.nova_group ?? null,
     porcion_g: p.serving_quantity ? Number(p.serving_quantity) : null,
     fuente: 'off',
   };

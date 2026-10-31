@@ -3,15 +3,23 @@
 // ============================================================
 const Logic = (() => {
 
-  const todayISO = () => new Date().toISOString().slice(0, 10);
+  // Fechas siempre en hora local: toISOString() es UTC y en Chile adelantaba el día desde las 20-21 h.
+  const dateISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const todayISO = () => dateISO(new Date());
+  const addDays = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return dateISO(d); };
+  const daysBetween = (a, b) => Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000);
 
-  // Día sugerido segun rotación A/B: cuenta sesiones previas y alterna
-  function nextDay(allSets) {
-    const fechas = [...new Set(allSets.map(s => s.fecha))].sort();
-    if (!fechas.length) return 'A';
-    const lastFecha = fechas[fechas.length - 1];
-    const lastRutina = (allSets.find(s => s.fecha === lastFecha) || {}).rutina;
-    return lastRutina === 'A' ? 'B' : 'A';
+  const FREE = 'Libre';
+  // Rutinas = valores de exercises.dia, con cualquier nombre
+  function routinesOf(exercises) {
+    return [...new Set(exercises.filter(e => e.dia && e.activo !== false).map(e => e.dia))].sort((a,b)=>a.localeCompare(b,'es',{numeric:true}));
+  }
+  // Siguiente rutina de la rotación. Las sesiones libres no la mueven.
+  function nextDay(allSets, routines = ['A','B']) {
+    if (!routines.length) return null;
+    const last = allSets.filter(s => routines.includes(s.rutina)).reduce((a,s) => !a || s.fecha >= a.fecha ? s : a, null);
+    if (!last) return routines[0];
+    return routines[(routines.indexOf(last.rutina) + 1) % routines.length];
   }
 
   // Última sesión registrada de un ejercicio -> [{serie,reps,peso,rir}]
@@ -103,6 +111,13 @@ const Logic = (() => {
   }
 
   // ---- Peso corporal ----
+  // Solo registros de la ventana real de días. Con tomas en ayunas suficientes, descarta las
+  // post-comida (leen 0,6-1,2 kg más y ensucian la tendencia).
+  function recentWeights(weights, days) {
+    const win = weights.filter(w => w.fecha >= isoDaysAgo(days));
+    const fasted = win.filter(w => w.condicion !== 'otro');
+    return fasted.length >= 4 ? fasted : win;
+  }
   function weeklyAvg(weights) {
     if (!weights.length) return null;
     const last7 = weights.slice(-7);
@@ -110,7 +125,7 @@ const Logic = (() => {
   }
   // tendencia kg/semana (regresión simple sobre últimos 21 días)
   function weeklyTrend(weights) {
-    const pts = weights.slice(-21).map(w => ({ t: new Date(w.fecha).getTime()/86400000, y: Number(w.peso_kg) }));
+    const pts = recentWeights(weights, 21).map(w => ({ t: new Date(w.fecha).getTime()/86400000, y: Number(w.peso_kg) }));
     if (pts.length < 4) return null;
     const n = pts.length, sx = pts.reduce((a,p)=>a+p.t,0), sy = pts.reduce((a,p)=>a+p.y,0);
     const sxx = pts.reduce((a,p)=>a+p.t*p.t,0), sxy = pts.reduce((a,p)=>a+p.t*p.y,0);
@@ -118,31 +133,18 @@ const Logic = (() => {
     return +(slope*7).toFixed(2); // kg/semana
   }
 
-  // Recomendación de peso corporal según objetivo y tendencia
-  function bodyAdvice(profile, weights) {
-    const avg = weeklyAvg(weights);
-    const trend = weeklyTrend(weights);
+  // Compara la tendencia con el ritmo que corresponde a tu objetivo y composición (js/evidence.js)
+  function bodyAdvice(profile, weights, medidas = {}) {
+    const avg = weeklyAvg(weights), trend = weeklyTrend(weights);
     if (avg == null) return { clase:'tag-keep', texto:'Registra tu peso 3-4×/semana para empezar la curva.' };
-    const obj = profile?.objetivo || 'recomposicion';
-    const t = trend ?? 0;
-    const fmt = (avg!=null?`Promedio ~${avg} kg.`:'') + (trend!=null?` Tendencia ${t>0?'+':''}${t} kg/sem.`:'');
-
-    if (obj === 'recomposicion') {
-      if (t > 0.3) return { clase:'tag-down', texto:`${fmt} Subes algo rápido para recomposición. Baja ~150-200 kcal.` };
-      if (t < -0.3) return { clase:'tag-down', texto:`${fmt} Bajas rápido; podrías perder músculo. Sube ~150 kcal.` };
-      return { clase:'tag-up', texto:`${fmt} 👌 Peso estable: ideal para recomposición. Mantén calorías y prioriza proteína.` };
-    }
-    if (obj === 'ganar') {
-      if (t < 0.1) return { clase:'tag-keep', texto:`${fmt} Para ganar músculo sube ~200-300 kcal (meta +0.25-0.4 kg/sem).` };
-      if (t > 0.5) return { clase:'tag-down', texto:`${fmt} Ganas muy rápido (más grasa). Reduce ~150 kcal.` };
-      return { clase:'tag-up', texto:`${fmt} 👌 Ritmo de ganancia correcto. Mantén.` };
-    }
-    if (obj === 'perder') {
-      if (t > -0.2) return { clase:'tag-keep', texto:`${fmt} Para perder grasa baja ~250-400 kcal (meta -0.3-0.6 kg/sem).` };
-      if (t < -0.8) return { clase:'tag-down', texto:`${fmt} Bajas muy rápido; riesgo de perder músculo. Sube ~150 kcal.` };
-      return { clase:'tag-up', texto:`${fmt} 👌 Buen ritmo de pérdida. Mantén proteína alta.` };
-    }
-    return { clase:'tag-keep', texto:`${fmt} Mantén tu peso estable.` };
+    const dec = (v, d) => v.toFixed(d).replace('.', ',');
+    const fmt = `Promedio ~${dec(avg,1)} kg.` + (trend!=null ? ` Tendencia ${trend>0?'+':''}${dec(trend,2)} kg/sem.` : '');
+    if (trend == null) return { clase:'tag-keep', texto:`${fmt} Con 4 pesos en 3 semanas se calcula tu ritmo.` };
+    const meta = avg * Evidence.weeklyRate({ objetivo:profile?.objetivo||'recomposicion', peso:avg, estatura_cm:profile?.estatura_cm, cintura:medidas.cintura }) / 100;
+    const tol = Math.max(0.2, Math.abs(meta)*0.6), metaTxt = `${meta>0?'+':''}${dec(meta,2)} kg/sem`;
+    if (trend < meta-tol) return { clase:'tag-down', texto:`${fmt} Vas por debajo de tu ritmo (${metaTxt}): podrías perder músculo. Sube ~150 kcal.` };
+    if (trend > meta+tol) return { clase:'tag-down', texto:`${fmt} Vas sobre tu ritmo (${metaTxt}). Baja ~150 kcal.` };
+    return { clase:'tag-up', texto:`${fmt} 👌 En ritmo (${metaTxt}). Mantén y prioriza proteína.` };
   }
 
   // ---- Medidas corporales / composición ----
@@ -169,39 +171,11 @@ const Logic = (() => {
       .sort((a,b)=> a[0]<b[0]?-1:1);
   }
 
-  // % graso estimado — fórmula U.S. Navy (cm). sexo: 'h' (def) | 'm'
-  // Requiere cuello + cintura + estatura (+ cadera si mujer).
-  function bodyFatNavy({ sexo='h', cuello, cintura, cadera, estatura_cm }) {
-    if (!estatura_cm || !cuello || !cintura) return null;
-    const log10 = x => Math.log(x) / Math.LN10;
-    let bf;
-    if (sexo === 'm') {
-      if (!cadera) return null;
-      bf = 495 / (1.29579 - 0.35004*log10(cintura + cadera - cuello) + 0.22100*log10(estatura_cm)) - 450;
-    } else {
-      if (cintura - cuello <= 0) return null;
-      bf = 495 / (1.0324 - 0.19077*log10(cintura - cuello) + 0.15456*log10(estatura_cm)) - 450;
-    }
-    if (!isFinite(bf) || bf <= 0 || bf > 70) return null;
-    return +bf.toFixed(1);
-  }
-  // % graso por IMC (Deurenberg) — sexo: 'h'=1 | 'm'=0
-  function bodyFatBMI({ sexo='h', peso, estatura_cm, edad }) {
-    if (!peso || !estatura_cm || !edad) return null;
-    const imc = peso / Math.pow(estatura_cm/100, 2);
-    const bf = 1.20*imc + 0.23*edad - 10.8*(sexo==='m'?0:1) - 5.4;
-    return (bf > 0 && bf < 70) ? +bf.toFixed(1) : null;
-  }
-  // Mejor estimación disponible -> { pct, metodo }
+  // Mejor estimación disponible -> { pct, metodo, alternativas }
   function bestBodyFat(profile, peso, measurements) {
     const latest = latestMeasures(measurements || []);
-    const navy = bodyFatNavy({ sexo:profile?.sexo||'h', cuello:latest.cuello?.valor_cm,
-      cintura:latest.cintura?.valor_cm, cadera:latest.cadera?.valor_cm, estatura_cm:profile?.estatura_cm });
-    if (navy != null) return { pct:navy, metodo:'Navy (perímetros)' };
-    if (profile?.grasa_pct) return { pct:+profile.grasa_pct, metodo:'manual' };
-    const bmi = bodyFatBMI({ sexo:profile?.sexo||'h', peso, estatura_cm:profile?.estatura_cm, edad:profile?.edad });
-    if (bmi != null) return { pct:bmi, metodo:'IMC (Deurenberg)' };
-    return null;
+    const medidas = {}; Object.keys(latest).forEach(k => medidas[k] = latest[k].valor_cm);
+    return Evidence.bodyFat({ sexo:profile?.sexo||'h', peso, estatura_cm:profile?.estatura_cm, edad:profile?.edad, medidas, manual:profile?.grasa_pct });
   }
   // Proyección de peso a N semanas según tendencia
   function projectWeight(weights, weeks=4) {
@@ -209,15 +183,10 @@ const Logic = (() => {
     if (avg == null || trend == null) return null;
     return { value:+(avg + trend*weeks).toFixed(1), weeks, trend };
   }
-  // Masa grasa / magra a partir de %graso y peso
-  function composition(bfPct, pesoKg) {
-    if (bfPct == null || !pesoKg) return null;
-    const grasa = +(pesoKg * bfPct/100).toFixed(1);
-    return { grasa, magra: +(pesoKg - grasa).toFixed(1) };
-  }
+  const composition = (bfPct, pesoKg, cm) => Evidence.composition(bfPct, pesoKg, cm);
 
   // ---- Nutrición ----
-  const MEALS = [['desayuno','Desayuno'],['almuerzo','Almuerzo'],['cena','Cena'],['snack','Snack']];
+  const MEALS = [['desayuno','Desayuno'],['almuerzo','Almuerzo'],['once','Once'],['cena','Cena'],['snack','Colación']];
   const ACTIVITY = [
     [1.2,  'Sedentario (sin ejercicio)'],
     [1.375,'Ligero (1-3 días/sem)'],
@@ -226,60 +195,72 @@ const Logic = (() => {
     [1.725,'Alto (6-7 días/sem)'],
   ];
 
-  // BMR — Mifflin-St Jeor
-  function bmrMifflin({ sexo='h', peso, estatura_cm, edad }) {
-    if (!peso || !estatura_cm || !edad) return null;
-    const base = 10*peso + 6.25*estatura_cm - 5*edad;
-    return Math.round(base + (sexo === 'm' ? -161 : 5));
-  }
-
-  // Objetivos calóricos y de macros calculados desde el perfil
-  function nutritionTargets(profile, pesoActual) {
+  // Objetivos calculados con evidencia (ver js/evidence.js)
+  function nutritionTargets(profile, pesoActual, medidas = {}) {
     const peso = pesoActual || profile?.peso_objetivo_kg;
-    const bmr = bmrMifflin({ sexo: profile?.sexo || 'h', peso,
-      estatura_cm: profile?.estatura_cm, edad: profile?.edad });
-    if (!bmr || !peso) return null;
-    const maint = Math.round(bmr * (profile?.actividad || 1.45));
-    const obj = profile?.objetivo || 'recomposicion';
-    const factor = { ganar:1.10, perder:0.80, recomposicion:1.02, fuerza:1.05, mantener:1.0 }[obj] ?? 1.0;
-    const kcal = Math.round(maint * factor);
-    const prot = Math.round(peso * 2.0);          // 2.0 g/kg
-    const grasa = Math.round(peso * 0.9);         // 0.9 g/kg
-    const carbo = Math.max(0, Math.round((kcal - prot*4 - grasa*9) / 4));
-    return { kcal, prot, grasa, carbo, maint, bmr };
+    if (!peso) return null;
+    const fat = Evidence.bodyFat({ sexo:profile?.sexo||'h', peso, estatura_cm:profile?.estatura_cm, edad:profile?.edad, medidas, manual:profile?.grasa_pct });
+    return Evidence.targets({ sexo:profile?.sexo||'h', peso, estatura_cm:profile?.estatura_cm, edad:profile?.edad,
+      actividad:Number(profile?.actividad)||1.45, objetivo:profile?.objetivo||'recomposicion',
+      magra:Evidence.composition(fat?.pct, peso)?.magra, cintura:medidas.cintura });
   }
 
   // Objetivos efectivos: manuales del perfil si existen, si no los calculados
-  function effectiveTargets(profile, pesoActual) {
-    const calc = nutritionTargets(profile, pesoActual);
+  function effectiveTargets(profile, pesoActual, medidas) {
+    const calc = nutritionTargets(profile, pesoActual, medidas);
     return {
       kcal:  profile?.kcal_objetivo || calc?.kcal || null,
       prot:  profile?.proteina_g    || calc?.prot || null,
       grasa: profile?.grasa_g       || calc?.grasa || null,
       carbo: profile?.carbo_g       || calc?.carbo || null,
-      calc,
+      fibra: calc?.fibra ?? 25, sat: calc?.sat ?? null, azucar: calc?.azucar ?? null, sodio: 2000,
+      manual: !!profile?.kcal_objetivo, calc,
     };
   }
 
   // Macros de una porción a partir de valores por 100 g
+  const MACROS = [['kcal',0],['prot',1],['grasa',1],['carbo',1],['fibra',1],['azucar',1],['sat',1],['sodio',0]];
   function macrosFor(food, gramos) {
-    const f = gramos / 100;
-    return {
-      kcal:  food.kcal_100  != null ? +(food.kcal_100  * f).toFixed(0) : null,
-      prot:  food.prot_100  != null ? +(food.prot_100  * f).toFixed(1) : null,
-      grasa: food.grasa_100 != null ? +(food.grasa_100 * f).toFixed(1) : null,
-      carbo: food.carbo_100 != null ? +(food.carbo_100 * f).toFixed(1) : null,
-    };
+    const f = gramos / 100, out = {};
+    MACROS.forEach(([k,d]) => { const v = food[k+'_100']; out[k] = v != null ? +(v*f).toFixed(d) : null; });
+    return out;
   }
 
   // Suma de un conjunto de registros alimentarios
   function sumFoods(logs) {
-    return logs.reduce((a,l)=>({
-      kcal:  a.kcal  + (+l.kcal  || 0),
-      prot:  a.prot  + (+l.prot  || 0),
-      grasa: a.grasa + (+l.grasa || 0),
-      carbo: a.carbo + (+l.carbo || 0),
-    }), { kcal:0, prot:0, grasa:0, carbo:0 });
+    const out = {}; MACROS.forEach(([k]) => out[k] = 0);
+    logs.forEach(l => MACROS.forEach(([k]) => out[k] += +l[k] || 0));
+    return out;
+  }
+
+  // Valores por 100 g reconstruidos desde un registro (para repetirlo o cambiar la cantidad)
+  function foodFromLog(l) {
+    const f = l.gramos > 0 ? 100/l.gramos : 1, food = { nombre:l.nombre, porcion_g:+l.gramos||100, nova:l.nova??null, fuente:'reciente' };
+    MACROS.forEach(([k]) => food[k+'_100'] = l[k]!=null ? +(l[k]*f).toFixed(2) : null);
+    return food;
+  }
+  // Alimentos más usados, sin repetir
+  function frequentFoods(logs, n = 12) {
+    const map = new Map();
+    logs.forEach(l => { if(!l.nombre || !(l.gramos>0)) return; const c = map.get(l.nombre); if(c) c.n++; else map.set(l.nombre, { n:1, l }); });
+    return [...map.values()].sort((a,b)=>b.n-a.n).slice(0,n).map(x=>foodFromLog(x.l));
+  }
+  // Resumen semanal: promedios sobre días con registro
+  function nutritionWeek(logs, end = todayISO()) {
+    const days = Array.from({length:7}, (_,i) => addDays(end, i-6)).map(fecha => {
+      const items = logs.filter(l => l.fecha === fecha);
+      return { fecha, n:items.length, ...sumFoods(items) };
+    });
+    const dd = days.filter(d => d.n);
+    const avg = k => dd.length ? Math.round(dd.reduce((a,d)=>a+d[k],0)/dd.length) : null;
+    return { days, logged:dd.length, kcal:avg('kcal'), prot:avg('prot'), fibra:avg('fibra') };
+  }
+  // % de kcal con clasificación NOVA conocida que viene de ultraprocesados
+  function upfShare(logs) {
+    const known = logs.filter(l => l.nova != null);
+    const total = known.reduce((a,l)=>a+(+l.kcal||0),0);
+    if (known.length < 3 || !total) return null;
+    return Math.round(known.filter(l=>l.nova===4).reduce((a,l)=>a+(+l.kcal||0),0)/total*100);
   }
 
   // ---- Tipos de serie / esfuerzo / descanso ----
@@ -299,7 +280,7 @@ const Logic = (() => {
   //  INTELIGENCIA (Fase 2): estancamiento, deload, TDEE adaptativo,
   //  adherencia, alertas e informe semanal.
   // ============================================================
-  const isoDaysAgo = d => new Date(Date.now() - d*86400000).toISOString().slice(0,10);
+  const isoDaysAgo = d => addDays(todayISO(), -d);
   const effSets = sets => sets.filter(s => s.peso_kg > 0 && s.set_type !== 'calentamiento');
 
   // Mejor e1RM por fecha de un ejercicio -> [[fecha, e1rm], ...]
@@ -370,60 +351,176 @@ const Logic = (() => {
     return { clase, texto, kcalSugerido: ad.avgIntake + kcalAdj };
   }
 
-  // Adherencia y rachas
+  // Adherencia y rachas. Hoy puede faltar todavía sin romper la racha.
+  function streakOf(set){
+    let d = todayISO(), n = 0;
+    if (!set.has(d)) d = addDays(d, -1);
+    while (set.has(d)){ n++; d = addDays(d, -1); }
+    return n;
+  }
   function daysSinceTraining(sets){
     if (!sets.length) return null;
-    const last = [...new Set(sets.map(s=>s.fecha))].sort().pop();
-    return Math.floor((Date.now() - new Date(last).getTime()) / 86400000);
+    return daysBetween([...new Set(sets.map(s=>s.fecha))].sort().pop(), todayISO());
   }
   function sessionsInLast(sets, days){
     const since = isoDaysAgo(days);
     return new Set(sets.filter(s => s.fecha >= since).map(s => s.fecha)).size;
   }
   function loggingStreak(foodLogs){
-    const set = new Set(foodLogs.map(l => l.fecha));
-    const d = new Date();
-    if (!set.has(d.toISOString().slice(0,10))) d.setDate(d.getDate()-1); // permite que hoy aún no esté
-    let streak = 0;
-    for (;;){ const iso = d.toISOString().slice(0,10); if (set.has(iso)){ streak++; d.setDate(d.getDate()-1); } else break; }
-    return streak;
+    return streakOf(new Set(foodLogs.map(l => l.fecha)));
   }
 
-  // Motor de alertas (combina todo)
-  function buildAlerts({ sets, weights, foodLogs, profile, lastWeight, sleep = [], wellness = [], injuries = [] }){
+  // Motor de avisos. Se recalcula en cada render y al volver a la app.
+  // Cada aviso solo mira datos frescos, y su id cambia con el estado: lo descartado
+  // reaparece únicamente si la situación cambia. `tab` lleva a donde se resuelve.
+  function buildAlerts({ sets, weights, foodLogs, cardio = [], profile, lastWeight, medidas, sleep = [], wellness = [], injuries = [], salud = null, now = new Date() }){
     const out = [];
-    const today = todayISO();
-    // Readiness bajo hoy
-    const rd = readiness(sleep.find(s=>s.fecha===today), wellness.find(w=>w.fecha===today));
-    if (rd != null && rd < 50) out.push({ level:'warn', icon:'🔋', text:`Readiness bajo (${rd}/100). Hoy prioriza recuperación: baja volumen o haz movilidad.` });
-    // Lesiones activas
+    const add = (id, level, icon, text, tab) => out.push({ id, level, icon, text, tab });
+    const today = todayISO(), hora = now.getHours();
+    const trainedToday = sets.some(s=>s.fecha===today) || cardio.some(c=>c.fecha===today);
+
+    const sueno = saludValue(salud, 'sueno', today) ?? sleep.find(s=>s.fecha===today)?.horas;
+    const rd = readiness({ horas:sueno, calidad:sleep.find(s=>s.fecha===today)?.calidad }, wellness.find(w=>w.fecha===today));
+    if (rd != null && rd < 50 && !trainedToday) add(`rd-${today}`,'warn','🔋',`Recuperación baja (${rd}/100). Hoy conviene bajar volumen o hacer movilidad.`,'salud');
+
+    // Mediciones de Mi Salud
+    const pa = saludLatest(salud, 'presion');
+    if (pa && pa.fecha >= isoDaysAgo(14) && (pa.sistolica>=135 || pa.diastolica>=85))
+      add(`pa-${pa.fecha}`,'warn','🩺',`Última presión ${pa.sistolica}/${pa.diastolica}: sobre el corte domiciliario 135/85. Repítela en reposo y revísala en Mi Salud.`,'salud');
+    const prox = nextHealthEvent(salud);
+    if (prox && daysBetween(today, prox.fecha) <= 7) add(`ctl-${prox.fecha}`,'info','📅',`${prox.texto}: ${prox.fecha===today?'hoy':`en ${daysBetween(today,prox.fecha)} días`}${prox.sugerido?' (sugerido, sin agendar)':''}.`,'salud');
+
     const act = injuries.filter(i=>i.estado==='activa');
-    if (act.length) out.push({ level:'info', icon:'🩹', text:`Lesión activa: ${act.map(i=>i.zona).join(', ')}. Entrena alrededor y evita lo que duela.` });
-    const since = daysSinceTraining(sets);
-    if (since != null && since >= 4)
-      out.push({ level:'warn', icon:'⏰', text:`Llevas ${since} días sin entrenar. Retoma para no perder el ritmo.` });
-    const dl = deloadAdvice(sets);
-    if (dl?.due) out.push({ level:'warn', icon:'🔄', text:dl.text });
-    // proteína baja sostenida (últimos días con registro)
-    const t = effectiveTargets(profile, lastWeight);
+    if (act.length) add(`inj-${act.map(i=>i.id).join()}`,'info','🩹',`Lesión activa: ${act.map(i=>i.zona).join(', ')}. Registra el dolor y evita lo que moleste.`,'salud');
+
+    // Entrenamiento
+    const all = [...sets.map(s=>s.fecha), ...cardio.map(c=>c.fecha)].sort();
+    const since = all.length ? daysBetween(all[all.length-1], today) : null;
+    if (since != null && since >= 4) add(`idle-${all[all.length-1]}-${Math.floor(since/7)}`,'warn','⏰',`Llevas ${since} días sin entrenar. Una sesión corta ya cuenta.`,'entreno');
+    if (since != null && since < 14){
+      const dl = deloadAdvice(sets);
+      if (dl?.due) add(`dl-${dl.stalled}-${dl.tracked}`,'warn','🔄',dl.text,'entreno');
+    }
+    const recent = isoDaysAgo(7), prs = newPRs(sets.filter(s=>s.fecha<recent), sets.filter(s=>s.fecha>=recent));
+    if (prs.length) add(`pr-${prs.map(p=>p.ejercicio+p.e1rm).join()}`,'good','🏆',`¡${prs.length} récord${prs.length>1?'s':''} esta semana! Último: ${prs[prs.length-1].ejercicio}.`,'entreno');
+
+    // Nutrición: promedio de 7 días y lo que falta hoy
+    const t = effectiveTargets(profile, lastWeight, medidas);
     if (t.prot){
-      const since5 = isoDaysAgo(7);
       const byDate = {};
-      foodLogs.filter(l=>l.fecha>=since5).forEach(l=>{ byDate[l.fecha]=(byDate[l.fecha]||0)+(+l.prot||0); });
+      foodLogs.filter(l=>l.fecha>=recent && l.fecha<today).forEach(l=>{ byDate[l.fecha]=(byDate[l.fecha]||0)+(+l.prot||0); });
       const ds = Object.values(byDate);
       if (ds.length >= 3){
-        const avg = ds.reduce((a,b)=>a+b,0)/ds.length;
-        if (avg < t.prot*0.8) out.push({ level:'warn', icon:'🥩', text:`Proteína baja: promedias ${Math.round(avg)} g/día (objetivo ${t.prot} g). Súbela para conservar músculo.` });
+        const avg = Math.round(ds.reduce((a,b)=>a+b,0)/ds.length);
+        if (avg < t.prot*0.8) add(`prot-${today}`,'warn','🥩',`Proteína baja: promedias ${avg} g/día de ${t.prot} g.`,'nutricion');
       }
+      const hoy = sumFoods(foodLogs.filter(l=>l.fecha===today));
+      if (hora >= 18 && hoy.kcal > 0 && hoy.prot < t.prot*0.7) add(`protday-${today}`,'info','🍗',`Te faltan ${Math.round(t.prot-hoy.prot)} g de proteína para hoy.`,'nutricion');
+      if (hora >= 14 && !foodLogs.some(l=>l.fecha===today)) add(`nofood-${today}`,'info','🍽️','Hoy aún no registras comidas. ¿Agregas lo que llevas?','nutricion');
     }
-    // peso fuera de ritmo
-    const adv = bodyAdvice(profile, weights);
-    if (adv && adv.clase === 'tag-down') out.push({ level:'warn', icon:'⚖️', text:adv.texto });
-    // PR reciente (positivo)
-    const since7 = isoDaysAgo(7);
-    const recentPRs = newPRs(sets.filter(s=>s.fecha<since7), sets.filter(s=>s.fecha>=since7));
-    if (recentPRs.length) out.push({ level:'good', icon:'🏆', text:`¡${recentPRs.length} récord(s) esta semana! Último: ${recentPRs[0].ejercicio}.` });
+    if (salud?.ok && hora >= 17){
+      const meta = salud.metas?.agua || 2000, agua = saludValue(salud,'agua',today) || 0;
+      if (agua < meta*0.6) add(`agua-${today}`,'info','💧',`Llevas ${agua} ml de agua de ${meta} ml.`,'nutricion');
+    }
+
+    // Peso: solo si hay datos recientes; si no, pide medir en vez de repetir un consejo viejo
+    const lastW = weights[weights.length-1];
+    if (lastW){
+      const age = daysBetween(lastW.fecha, today);
+      if (age >= 7) add(`w-old-${lastW.fecha}`,'info','⚖️',`Tu último peso es de hace ${age} días. Pésate en ayunas para actualizar la tendencia.`,'cuerpo');
+      else { const adv = bodyAdvice(profile, weights, medidas); if (adv?.clase === 'tag-down') add(`w-${lastW.fecha}`,'warn','⚖️',adv.texto,'cuerpo'); }
+    }
+    if (t.manual && t.calc && Math.abs(profile.kcal_objetivo - t.calc.kcal) > t.calc.kcal*0.12)
+      add(`kcal-${profile.kcal_objetivo}-${t.calc.kcal}`,'info','🎯',`Tu objetivo manual (${profile.kcal_objetivo} kcal) se aleja del calculado para tu peso actual (${t.calc.kcal}). Revísalo en Nutrición.`,'nutricion');
     return out;
+  }
+
+  // ---- Datos de Mi Salud ----
+  // Valor del día: agua suma los vasos; el resto usa el último registro, con el manual sobre el del smartband.
+  function saludValue(salud, tipo, fecha){
+    const rows = (salud?.med||[]).filter(m=>m.tipo===tipo && m.fecha===fecha);
+    if (!rows.length) return null;
+    if (tipo==='agua') return rows.reduce((a,r)=>a+Number(r.valor||0),0);
+    const m = rows.filter(r=>r.origen!=='wearable');
+    return Number((m.length?m:rows).slice(-1)[0].valor);
+  }
+  function saludLatest(salud, tipo){
+    return (salud?.med||[]).filter(m=>m.tipo===tipo).sort((a,b)=>a.fecha<b.fecha?-1:a.fecha>b.fecha?1:0).pop() || null;
+  }
+  // Próxima cita real o control sugerido sin agendar
+  function nextHealthEvent(salud){
+    const hoy = todayISO(), citas = salud?.citas||[], tomados = new Set(citas.map(c=>c.control_id).filter(Boolean));
+    const a = citas.filter(c=>c.fecha>=hoy).map(c=>({ fecha:c.fecha, texto:c.titulo, hora:c.hora?String(c.hora).slice(0,5):'' }));
+    const b = (salud?.controles||[]).filter(c=>c.fecha && c.fecha.length===10 && c.fecha>=hoy && !tomados.has(c.id))
+      .map(c=>({ fecha:c.fecha, texto:c.texto, hora:'', sugerido:true }));
+    return [...a,...b].sort((x,y)=>x.fecha<y.fecha?-1:1)[0] || null;
+  }
+  // Peso: Mi Salud es la fuente; body_weight queda como historial anterior.
+  function mergeWeights(legacy, med){
+    const map = new Map();
+    legacy.forEach(w => map.set(w.fecha, { ...w, origen:'historial' }));
+    const rows = med.filter(m=>m.tipo==='peso').sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));
+    rows.forEach(m => {
+      const cur = map.get(m.fecha);
+      if (cur?.origen==='salud' && cur.condicion==='ayunas' && m.condicion!=='ayunas') return;
+      map.set(m.fecha, { id:m.id, fecha:m.fecha, peso_kg:Number(m.valor), observaciones:m.nota, condicion:m.condicion, origen:'salud' });
+    });
+    return [...map.values()].sort((a,b)=>a.fecha<b.fecha?-1:1);
+  }
+  function mergeMeasures(legacy, med){
+    return [...legacy.filter(m=>m.medida!=='cintura' || !med.some(x=>x.tipo==='cintura'&&x.fecha===m.fecha)),
+      ...med.filter(m=>m.tipo==='cintura').map(m=>({ id:m.id, fecha:m.fecha, medida:'cintura', valor_cm:Number(m.valor), origen:'salud' }))]
+      .sort((a,b)=>a.fecha<b.fecha?-1:1);
+  }
+
+  // ---- Sesiones y volumen ----
+  // Sesiones agrupadas por fecha+rutina, de la más nueva a la más vieja
+  function sessionsList(sets){
+    const map = new Map();
+    sets.forEach(s => { const k = s.fecha+'|'+(s.rutina||''); if(!map.has(k)) map.set(k,{ key:k, fecha:s.fecha, rutina:s.rutina, sets:[] }); map.get(k).sets.push(s); });
+    return [...map.values()].map(x => ({ ...x, ejercicios:[...new Set(x.sets.map(s=>s.ejercicio))],
+      vol:Math.round(x.sets.filter(s=>s.set_type!=='calentamiento').reduce((a,s)=>a+(s.peso_kg||0)*s.reps,0)) }))
+      .sort((a,b)=>a.fecha<b.fecha?1:-1);
+  }
+  const GROUP_ALIAS = { gluteo:'piernas', brazo:'brazos', biceps:'brazos', triceps:'brazos' };
+  const MUSCLES = [['pecho','Pecho'],['espalda','Espalda'],['piernas','Piernas'],['hombro','Hombros'],['brazos','Brazos'],['core','Core']];
+  function groupOf(nombre, exercises = []){
+    const e = exercises.find(x=>x.nombre===nombre)?.grupo
+      || (typeof EXERCISE_LIBRARY!=='undefined' ? EXERCISE_LIBRARY.find(x=>x.nombre===nombre)?.grupo : null);
+    const g = (e||'otro').toLowerCase();
+    return GROUP_ALIAS[g] || g;
+  }
+  // Series efectivas, días y último entrenamiento por grupo (ACSM 2026: ≥10 series y ≥2 días/sem)
+  function muscleWeek(sets, exercises){
+    const since = isoDaysAgo(6), hoy = todayISO();
+    return MUSCLES.map(([k,label]) => {
+      const rows = sets.filter(s=>s.set_type!=='calentamiento' && groupOf(s.ejercicio,exercises)===k);
+      const week = rows.filter(s=>s.fecha>=since);
+      const last = rows.map(s=>s.fecha).sort().pop() || null;
+      return { key:k, label, series:week.length, dias:new Set(week.map(s=>s.fecha)).size, reposo:last?daysBetween(last,hoy):null };
+    });
+  }
+  // Discos por lado para llegar a un peso de barra
+  function plates(total, barra = 20, disponibles = [25,20,15,10,5,2.5,1.25]){
+    let lado = (total-barra)/2; const out = [];
+    if (lado < 0) return { out, resto:0 };
+    disponibles.forEach(p => { while (lado >= p-1e-9){ out.push(p); lado -= p; } });
+    return { out, resto:+(lado*2).toFixed(2) };
+  }
+  // Series de aproximación antes de la carga de trabajo
+  function warmups(peso, redondeo = 2.5){
+    if (!(peso > 20)) return [];
+    return [[.4,8],[.6,5],[.8,3]].map(([f,reps]) => ({ peso:Math.max(20, Math.round(peso*f/redondeo)*redondeo), reps }));
+  }
+  // Tendencia suavizada (promedio móvil exponencial)
+  function weightTrendSeries(weights, alpha = 0.25){
+    let v = null, prev = null;
+    return weights.filter(w=>w.condicion!=='otro').map(w => {
+      // Tras una pausa larga la tendencia parte de nuevo: un peso antiguo no debe arrastrarla
+      v = v==null || daysBetween(prev, w.fecha) > 21 ? +w.peso_kg : v + alpha*(+w.peso_kg-v);
+      prev = w.fecha;
+      return { fecha:w.fecha, v:+v.toFixed(2) };
+    });
   }
 
   // Informe semanal
@@ -434,9 +531,8 @@ const Logic = (() => {
     const sessions = new Set(week.map(s=>s.fecha)).size;
     const volume = Math.round(week.reduce((a,s)=>a + (s.peso_kg||0)*s.reps, 0));
     const setsCount = week.length;
-    const grupoOf = {}; exercises.forEach(e => grupoOf[e.nombre] = e.grupo || 'otro');
     const perMuscle = {};
-    week.forEach(s => { const g = grupoOf[s.ejercicio] || 'otro'; perMuscle[g] = (perMuscle[g]||0) + 1; });
+    week.forEach(s => { const g = groupOf(s.ejercicio, exercises); perMuscle[g] = (perMuscle[g]||0) + 1; });
     const prs = newPRs(sets.filter(s=>s.fecha<since), week);
     // peso
     const wWeek = weights.filter(x => x.fecha >= since);
@@ -452,17 +548,12 @@ const Logic = (() => {
 
   // ---- Salud / hábitos / objetivos (Fase 2 batch B) ----
   function habitStreak(habitLogs, habitId){
-    const set = new Set(habitLogs.filter(l => l.habit_id === habitId).map(l => l.fecha));
-    const d = new Date();
-    if (!set.has(d.toISOString().slice(0,10))) d.setDate(d.getDate()-1);
-    let s = 0;
-    for (;;){ const iso = d.toISOString().slice(0,10); if (set.has(iso)){ s++; d.setDate(d.getDate()-1); } else break; }
-    return s;
+    return streakOf(new Set(habitLogs.filter(l => l.habit_id === habitId).map(l => l.fecha)));
   }
   // Readiness 0-100 (sueño + ánimo + energía + estrés invertido)
   function readiness(sleepToday, wellnessToday){
     const parts = [];
-    if (sleepToday){ if (sleepToday.horas != null) parts.push(Math.min(1, sleepToday.horas/8)); if (sleepToday.calidad != null) parts.push(sleepToday.calidad/5); }
+    if (sleepToday){ if (sleepToday.horas != null) parts.push(Math.min(1, sleepToday.horas/7.5)); if (sleepToday.calidad != null) parts.push(sleepToday.calidad/5); }
     if (wellnessToday){ if (wellnessToday.energia != null) parts.push(wellnessToday.energia/5); if (wellnessToday.animo != null) parts.push(wellnessToday.animo/5); if (wellnessToday.estres != null) parts.push((6 - wellnessToday.estres)/5); }
     if (!parts.length) return null;
     return Math.round(parts.reduce((a,b)=>a+b,0)/parts.length*100);
@@ -480,15 +571,11 @@ const Logic = (() => {
     return Math.round(Math.max(0, Math.min(1, pct)) * 100);
   }
 
-  // ---- Cardio / zonas de FC (Tanaka) ----
-  function maxHR(edad){ return edad ? Math.round(208 - 0.7*edad) : null; }
-  function hrZones(edad){
-    const m = maxHR(edad); if (!m) return null;
-    return [[0.5,0.6,'Z1 Recuperación'],[0.6,0.7,'Z2 Aeróbico'],[0.7,0.8,'Z3 Tempo'],[0.8,0.9,'Z4 Umbral'],[0.9,1.0,'Z5 Máximo']]
-      .map(([a,b,n]) => ({ n, lo:Math.round(m*a), hi:Math.round(m*b) }));
-  }
-  function zoneOf(fc, edad){
-    const zs = hrZones(edad); if (!zs || !fc) return null;
+  // ---- Cardio / zonas de FC ----
+  const maxHR = edad => Evidence.maxHR(edad);
+  const hrZones = (edad, reposo) => Evidence.hrZones(edad, reposo);
+  function zoneOf(fc, edad, reposo){
+    const zs = hrZones(edad, reposo); if (!zs || !fc) return null;
     return (zs.find(z => fc <= z.hi) || zs[zs.length-1]).n;
   }
 
@@ -515,14 +602,16 @@ const Logic = (() => {
     ];
   }
 
-  return { todayISO, nextDay, lastSessionOf, recommend, prsByExercise, newPRs,
-           volumeByDate, weeklyAvg, weeklyTrend, bodyAdvice,
-           MEASURE_DEFS, latestMeasures, measureSeries, bodyFatNavy, composition,
-           bodyFatBMI, bestBodyFat, projectWeight,
-           MEALS, ACTIVITY, bmrMifflin, nutritionTargets, effectiveTargets, macrosFor, sumFoods,
+  return { dateISO, todayISO, addDays, daysBetween, isoDaysAgo, FREE, routinesOf, nextDay, lastSessionOf, recommend, prsByExercise, newPRs,
+           volumeByDate, weeklyAvg, weeklyTrend, bodyAdvice, recentWeights,
+           MEASURE_DEFS, latestMeasures, measureSeries, composition, bestBodyFat, projectWeight,
+           MEALS, ACTIVITY, nutritionTargets, effectiveTargets, macrosFor, sumFoods, foodFromLog, frequentFoods, nutritionWeek, upfShare,
            SET_TYPES, rirFromRpe, rpeFromRir, restSuggestion,
            e1rmByDate, stalledExercises, deloadAdvice, adaptiveTDEE, adaptiveAdvice,
            daysSinceTraining, sessionsInLast, loggingStreak, buildAlerts, weeklyReport,
+           saludValue, saludLatest, nextHealthEvent, mergeWeights, mergeMeasures,
+           sessionsList, MUSCLES, groupOf, muscleWeek, plates, warmups, weightTrendSeries,
            habitStreak, readiness, goalCurrentValue, goalProgress,
            maxHR, hrZones, zoneOf, buildAchievements };
 })();
+if (typeof module !== 'undefined') module.exports = Logic;

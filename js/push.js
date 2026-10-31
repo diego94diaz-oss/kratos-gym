@@ -39,7 +39,7 @@ const Push = (() => {
   async function test(){
     if (permission() !== 'granted') { const p = await Notification.requestPermission(); if (p !== 'granted') throw new Error('Permiso denegado.'); }
     const r = await reg();
-    await r.showNotification('Kratos Gym 💪', { body: 'Notificaciones activas. ¡A darle!', icon: 'assets/icon-192.png', badge: 'assets/icon-192.png', vibrate: [120,60,120] });
+    await r.showNotification('Entrenamiento 💪', { body: 'Notificaciones activas. ¡A darle!', icon: 'assets/icon-192.png', badge: 'assets/icon-192.png', vibrate: [120,60,120] });
   }
 
   return { supported, permission, isSubscribed, enable, disable, test };

@@ -14,12 +14,12 @@ const EXERCISE_LIBRARY = [
   { nombre:'Flexiones', grupo:'pecho', patron:'empuje_horizontal', unidad:'peso_corporal' },
   // Espalda
   { nombre:'Dominadas', grupo:'espalda', patron:'traccion_vertical', unidad:'peso_corporal' },
-  { nombre:'Jalón al pecho', grupo:'espalda', patron:'traccion_vertical', unidad:'mancuerna' },
+  { nombre:'Jalón al pecho', grupo:'espalda', patron:'traccion_vertical', unidad:'polea' },
   { nombre:'Remo con barra', grupo:'espalda', patron:'traccion_horizontal', unidad:'barra' },
   { nombre:'Remo con mancuerna', grupo:'espalda', patron:'traccion_horizontal', unidad:'mancuerna' },
   { nombre:'Remo Pendlay', grupo:'espalda', patron:'traccion_horizontal', unidad:'barra' },
   { nombre:'Peso muerto', grupo:'espalda', patron:'bisagra', unidad:'barra' },
-  { nombre:'Face pull', grupo:'espalda', patron:'traccion_horizontal', unidad:'mancuerna' },
+  { nombre:'Face pull', grupo:'espalda', patron:'traccion_horizontal', unidad:'polea' },
   // Piernas
   { nombre:'Sentadilla con barra', grupo:'piernas', patron:'sentadilla', unidad:'barra' },
   { nombre:'Sentadilla frontal', grupo:'piernas', patron:'sentadilla', unidad:'barra' },
@@ -53,8 +53,50 @@ const EXERCISE_LIBRARY = [
   { nombre:'Elevación de piernas colgado', grupo:'core', patron:'core', unidad:'peso_corporal' },
   { nombre:'Crunch abdominal', grupo:'core', patron:'core', unidad:'peso_corporal' },
   { nombre:'Rueda abdominal', grupo:'core', patron:'core', unidad:'peso_corporal' },
-  { nombre:'Pallof press', grupo:'core', patron:'core', unidad:'mancuerna' },
+  { nombre:'Pallof press', grupo:'core', patron:'core', unidad:'polea' },
+  // Máquinas y poleas
+  { nombre:'Press de pecho en máquina', grupo:'pecho', patron:'empuje_horizontal', unidad:'maquina' },
+  { nombre:'Cruce de poleas', grupo:'pecho', patron:'aislamiento', unidad:'polea' },
+  { nombre:'Pec deck', grupo:'pecho', patron:'aislamiento', unidad:'maquina' },
+  { nombre:'Jalón en polea', grupo:'espalda', patron:'traccion_vertical', unidad:'polea' },
+  { nombre:'Remo sentado en polea', grupo:'espalda', patron:'traccion_horizontal', unidad:'polea' },
+  { nombre:'Remo en máquina', grupo:'espalda', patron:'traccion_horizontal', unidad:'maquina' },
+  { nombre:'Prensa de piernas', grupo:'piernas', patron:'sentadilla', unidad:'maquina' },
+  { nombre:'Sentadilla hack', grupo:'piernas', patron:'sentadilla', unidad:'maquina' },
+  { nombre:'Extensión de cuádriceps', grupo:'piernas', patron:'aislamiento', unidad:'maquina' },
+  { nombre:'Curl femoral en máquina', grupo:'piernas', patron:'aislamiento', unidad:'maquina' },
+  { nombre:'Abductores en máquina', grupo:'gluteo', patron:'aislamiento', unidad:'maquina' },
+  { nombre:'Press de hombro en máquina', grupo:'hombro', patron:'empuje_vertical', unidad:'maquina' },
+  { nombre:'Elevaciones laterales en polea', grupo:'hombro', patron:'aislamiento', unidad:'polea' },
+  { nombre:'Curl en polea', grupo:'biceps', patron:'aislamiento', unidad:'polea' },
+  { nombre:'Extensión de tríceps en polea', grupo:'triceps', patron:'aislamiento', unidad:'polea' },
+  { nombre:'Crunch en polea', grupo:'core', patron:'core', unidad:'polea' },
 ];
+
+// Unidad de cada ejercicio -> cómo se registra: 'kg' | 'reps' | 'tiempo'
+const unitKind = u => u === 'tiempo' ? 'tiempo' : u === 'peso_corporal' ? 'reps' : 'kg';
+
+// Plantillas basadas en ACSM 2026: cada grupo grande al menos 2×/semana.
+const ROUTINE_TEMPLATES = [
+  { nombre:'Full Body 3 días', desc:'Cada grupo 3×/semana. Ideal para retomar.', dias:{
+    'Full A':['Sentadilla con barra','Press banca con barra','Remo con barra','Elevaciones laterales','Plancha'],
+    'Full B':['Peso muerto rumano','Press militar con mancuernas','Jalón en polea','Sentadilla búlgara','Curl con mancuernas'],
+    'Full C':['Prensa de piernas','Press inclinado con mancuernas','Remo sentado en polea','Extensión de tríceps en polea','Elevación de piernas colgado'] } },
+  { nombre:'Torso / Pierna 4 días', desc:'Cada grupo 2×/semana con más volumen.', dias:{
+    'Torso 1':['Press banca con barra','Remo con barra','Press militar con mancuernas','Jalón en polea','Curl con mancuernas'],
+    'Pierna 1':['Sentadilla con barra','Peso muerto rumano','Extensión de cuádriceps','Elevación de talones (gemelos)','Plancha'],
+    'Torso 2':['Press inclinado con mancuernas','Remo sentado en polea','Elevaciones laterales','Face pull','Extensión de tríceps en polea'],
+    'Pierna 2':['Prensa de piernas','Hip thrust','Curl femoral en máquina','Elevación de talones (gemelos)','Crunch en polea'] } },
+  { nombre:'Empuje / Tirón / Pierna', desc:'3 días, o 6 para repetir cada grupo 2×/semana.', dias:{
+    'Empuje':['Press banca con barra','Press militar con mancuernas','Press inclinado con mancuernas','Elevaciones laterales','Extensión de tríceps en polea'],
+    'Tirón':['Dominadas','Remo con barra','Jalón en polea','Face pull','Curl con mancuernas'],
+    'Pierna':['Sentadilla con barra','Peso muerto rumano','Prensa de piernas','Curl femoral en máquina','Elevación de talones (gemelos)'] } },
+];
+
+// Actividades distintas a pesas (se guardan en cardio_sessions)
+const ACTIVITIES = [['caminata','🚶','Caminata'],['trote','🏃','Trote'],['bici','🚴','Bici'],['futbol','⚽','Fútbol'],
+  ['natacion','🏊','Natación'],['hiit','🔥','HIIT'],['eliptica','🌀','Elíptica'],['remo','🚣','Remo'],
+  ['yoga','🧘','Yoga'],['escalada','🧗','Escalada'],['senderismo','🥾','Senderismo'],['otro','✨','Otra']];
 
 // Rutinas de movilidad / calentamiento guiado (segundos por ejercicio)
 const MOBILITY_ROUTINES = [
@@ -79,3 +121,4 @@ function libraryAlternatives(nombre, grupo, patron){
   const rest = base.filter(e => !same.includes(e));
   return [...same, ...rest].slice(0, 8);
 }
+if (typeof module !== 'undefined') module.exports = { EXERCISE_LIBRARY, ROUTINE_TEMPLATES, ACTIVITIES, unitKind };

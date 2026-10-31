@@ -51,3 +51,4 @@ $$);
 ## Notas
 - La función compara la hora configurada con la hora actual en `America/Santiago`, ventana de 30 min → ejecútala cada 30 min.
 - Suscripciones caducadas (410/404) se borran solas.
+- Desde 2026-10-31 solo avisa lo pendiente: lee `workout_sets`, `cardio_sessions`, `food_logs` y `salud_mediciones`. Tras cambiar la función hay que volver a desplegarla.

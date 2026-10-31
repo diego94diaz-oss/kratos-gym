@@ -28,12 +28,32 @@ function nowMinutesSantiago(): number {
 const hm = (s: string) => { const [h, m] = String(s || '').split(':').map(Number); return (h || 0) * 60 + (m || 0); };
 
 function dueReminders(rem: any, now: number, win = 30) {
-  const out: { title: string; body: string }[] = [];
+  const out: { kind: string; title: string; body: string }[] = [];
   const inWin = (t: number) => now - t >= 0 && now - t < win;
-  if (rem?.entrenar?.on && inWin(hm(rem.entrenar.hora))) out.push({ title: 'Hora de entrenar 🏋️', body: 'Tu sesión de hoy te espera. ¡Vamos!' });
-  if (rem?.pesarse?.on  && inWin(hm(rem.pesarse.hora)))  out.push({ title: 'Pésate ⚖️', body: 'Registra tu peso en ayunas para tu curva.' });
-  if (rem?.agua?.on     && inWin(16 * 60))               out.push({ title: 'Hidratación 💧', body: '¿Vas al día con el agua?' });
+  if (rem?.entrenar?.on && inWin(hm(rem.entrenar.hora))) out.push({ kind: 'entrenar', title: 'Hora de entrenar 🏋️', body: 'Tu sesión de hoy te espera. ¡Vamos!' });
+  if (rem?.pesarse?.on  && inWin(hm(rem.pesarse.hora)))  out.push({ kind: 'pesarse', title: 'Pésate ⚖️', body: 'Registra tu peso en ayunas para tu curva.' });
+  if (rem?.comidas?.on  && inWin(hm(rem.comidas.hora)))  out.push({ kind: 'comidas', title: 'Anota tus comidas 🍽️', body: 'Hoy aún no registras nada.' });
+  if (rem?.agua?.on     && inWin(hm(rem.agua.hora || '16:00'))) out.push({ kind: 'agua', title: 'Hidratación 💧', body: '¿Vas al día con el agua?' });
   return out;
+}
+
+// Fecha de hoy en Chile
+const todaySantiago = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date());
+const any = async (table: string, user: string, fecha: string, extra: Record<string, string> = {}) => {
+  let q = sb.from(table).select('fecha', { count: 'exact', head: true }).eq('user_id', user).eq('fecha', fecha);
+  for (const [k, v] of Object.entries(extra)) q = q.eq(k, v);
+  return ((await q).count ?? 0) > 0;
+};
+// Descarta lo que ya está hecho hoy
+async function stillNeeded(kind: string, user: string, fecha: string) {
+  if (kind === 'entrenar') return !(await any('workout_sets', user, fecha)) && !(await any('cardio_sessions', user, fecha));
+  if (kind === 'pesarse') return !(await any('salud_mediciones', user, fecha, { tipo: 'peso' }));
+  if (kind === 'comidas') return !(await any('food_logs', user, fecha));
+  if (kind === 'agua') {
+    const { data } = await sb.from('salud_mediciones').select('valor').eq('user_id', user).eq('fecha', fecha).eq('tipo', 'agua');
+    return (data ?? []).reduce((a: number, r: any) => a + Number(r.valor || 0), 0) < 1000;
+  }
+  return true;
 }
 
 Deno.serve(async () => {
@@ -41,7 +61,8 @@ Deno.serve(async () => {
   const { data: profiles } = await sb.from('profile').select('user_id, reminders').not('reminders', 'is', null);
   let sent = 0;
   for (const p of profiles ?? []) {
-    const due = dueReminders((p as any).reminders, now);
+    const fecha = todaySantiago(), user = (p as any).user_id, due = [];
+    for (const n of dueReminders((p as any).reminders, now)) if (await stillNeeded(n.kind, user, fecha)) due.push(n);
     if (!due.length) continue;
     const { data: subs } = await sb.from('push_subscriptions').select('*').eq('user_id', (p as any).user_id);
     for (const s of subs ?? []) {

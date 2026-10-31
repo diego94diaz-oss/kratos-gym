@@ -1,343 +1,332 @@
 // ============================================================
-//  APP — Orquestador: auth, navegación, estado y acciones
+//  APP — Orquestador: auth, navegación, estado y acciones.
+//  Las vistas (js/views/*) leen App.cache y llaman a estas acciones.
 // ============================================================
-(() => {
+const App = (() => {
   const $ = UI.$;
-  let cache = { exercises:[], sets:[], weights:[], measurements:[], foodLogs:[], photos:[],
-                sleep:[], wellness:[], habits:[], habitLogs:[], injuries:[], goals:[], cardio:[], rehab:[],
-                recipes:[], supplements:[], supplementLogs:[], mesocycles:[], profile:null };
-  let currentTab = 'hoy';
-  let pickedDay = null;
-  let trainingMode = false;
-  let nutriDate = null;
-  const lastWeightKg = () => cache.weights.length ? Number(cache.weights[cache.weights.length-1].peso_kg) : null;
+  const cache = { exercises:[], sets:[], legacyWeights:[], legacyMeasures:[], weights:[], measurements:[], foodLogs:[], photos:[], foods:[],
+                  sleep:[], wellness:[], habits:[], habitLogs:[], injuries:[], goals:[], cardio:[], rehab:[],
+                  recipes:[], supplements:[], supplementLogs:[], mesocycles:[], sessionsMeta:[], profile:null, salud:null };
+  let currentTab = 'hoy', draft = null, lastRefresh = 0, lastDay = Logic.todayISO(), installEvt = null;
 
-  // ---------- Wake lock (pantalla activa al entrenar) ----------
-  let wakeLock = null;
-  async function reqWake(){ try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch {} }
-  async function relWake(){ try { await wakeLock?.release(); } catch {} wakeLock = null; }
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState==='visible' && trainingMode) reqWake(); });
+  // ---------- Datos derivados ----------
+  function derive(){
+    const med = cache.salud?.med || [];
+    cache.weights = Logic.mergeWeights(cache.legacyWeights, med);
+    cache.measurements = Logic.mergeMeasures(cache.legacyMeasures, med);
+  }
+  // Mi Salud manda en edad, estatura, sexo y meta de peso
+  function profileView(){
+    const p = cache.profile || {}, s = cache.salud?.perfil || {}, m = cache.salud?.metas || {};
+    return { ...p, edad:Evidence.ageFrom(s.nacimiento) ?? p.edad, estatura_cm:s.estatura_cm ?? p.estatura_cm, sexo:s.sexo ?? p.sexo ?? 'h',
+      peso_objetivo_kg:m.peso ?? p.peso_objetivo_kg };
+  }
+  function ctx(){
+    const profile = profileView(), lastWeightRow = cache.weights[cache.weights.length-1] || null, lastWeight = lastWeightRow ? Number(lastWeightRow.peso_kg) : null;
+    const latest = Logic.latestMeasures(cache.measurements), medidas = {};
+    Object.keys(latest).forEach(k => medidas[k] = latest[k].valor_cm);
+    const routines = Logic.routinesOf(cache.exercises);
+    return { profile, lastWeight, lastWeightRow, medidas, routines, nextRoutine:Logic.nextDay(cache.sets, routines),
+      targets:Logic.effectiveTargets(profile, lastWeight, medidas), fat:Logic.bestBodyFat(profile, lastWeight, cache.measurements),
+      sessions:Logic.sessionsList(cache.sets), fcReposo:Number(Logic.saludLatest(cache.salud,'fc')?.valor)||null,
+      goalCtx:{ lastWeight, measurements:cache.measurements, sets:cache.sets } };
+  }
+  const dismissed = () => { try { return JSON.parse(localStorage.getItem('kratos-dismissed')||'{}'); } catch { return {}; } };
+  function alerts(){
+    const c = ctx(), d = dismissed();
+    return Logic.buildAlerts({ ...cache, profile:c.profile, lastWeight:c.lastWeight, medidas:c.medidas }).filter(a => !d[a.id]);
+  }
+  function dismissAlert(id){
+    const d = dismissed(), cutoff = Logic.isoDaysAgo(30);
+    Object.keys(d).forEach(k => { if (d[k] < cutoff) delete d[k]; });
+    d[id] = Logic.todayISO();
+    try { localStorage.setItem('kratos-dismissed', JSON.stringify(d)); } catch {}
+    render();
+  }
+
+  // ---------- Carga ----------
+  // Una tabla que falla conserva lo que había: nunca reemplaza datos buenos por vacío.
+  async function loadAll(){
+    const load = (key, fn) => fn().then(v => { cache[key] = v; });
+    const results = await Promise.allSettled([
+      load('profile',DB.getProfile), load('exercises',DB.getExercises), load('sets',DB.getAllSets),
+      load('legacyWeights',DB.getWeights), load('legacyMeasures',DB.getMeasurements), load('foodLogs',DB.getFoodLogs),
+      load('foods',DB.getFoods), load('sleep',DB.getSleep), load('wellness',DB.getWellness), load('habits',DB.getHabits),
+      load('habitLogs',DB.getHabitLogs), load('injuries',DB.getInjuries), load('goals',DB.getGoals), load('cardio',DB.getCardio),
+      load('rehab',DB.getRehab), load('recipes',DB.getRecipes), load('supplements',DB.getSupplements),
+      load('supplementLogs',DB.getSupplementLogs), load('mesocycles',DB.getMesocycles), load('sessionsMeta',DB.getWorkoutSessions),
+      load('salud',DB.getSalud),
+    ]);
+    if (results.slice(0,3).some(r => r.status==='rejected')) throw new Error('offline');
+    derive();
+    DB.getPhotos().then(p => { cache.photos = p; if (currentTab==='cuerpo' && !busy()) render(); }).catch(()=>{});
+  }
+  async function ensureSeed(){
+    if (!cache.exercises.length) { await DB.bulkInsertExercises(SEED_EXERCISES.map(e=>({...e}))); cache.exercises = await DB.getExercises(); }
+    if (!cache.profile) { await DB.saveProfile({ ...SEED_PROFILE }); cache.profile = await DB.getProfile(); }
+  }
+  // Recarga al volver a la app: mantiene avisos y datos de Mi Salud al día
+  const busy = () => draft || UI.sheetOpen() || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName||'');
+  async function refresh(force){
+    if (!DB.uid() || !navigator.onLine) return;
+    if (!force && Date.now()-lastRefresh < 60000) return;
+    lastRefresh = Date.now();
+    try {
+      if (Offline.pending()) await Offline.flush(DB);
+      await loadAll(); Offline.saveCache(cache);
+      if (!busy()) render();
+    } catch {}
+  }
+  function checkDay(){ const t = Logic.todayISO(); if (t!==lastDay){ lastDay=t; if(!busy()) render(); refresh(true); } }
 
   // ---------- Escritura con respaldo offline ----------
-  // Intenta el insert online; si falla por falta de red, encola y aplica localmente.
-  // Devuelve true si fue online, false si quedó offline (encolado).
   async function tryWrite(kind, dbCall, payload, applyLocal){
     try { await dbCall(); return true; }
     catch (e) {
       if (Offline.isOfflineError(e)) {
-        Offline.enqueue({ kind, payload });
-        applyLocal && applyLocal();
-        Offline.saveCache(cache);
-        UI.toast('📴 Guardado offline · se sincroniza al reconectar');
+        Offline.enqueue({ kind, payload }); applyLocal && applyLocal(); derive(); Offline.saveCache(cache);
+        UI.toast('📴 Guardado sin conexión · se sincroniza después');
         return false;
       }
       UI.toast('Error: ' + (e.message || 'no se pudo guardar'));
       throw e;
     }
   }
-
-  // ---------- Tema ----------
-  function applyTheme(t){ document.documentElement.setAttribute('data-theme', t);
-    localStorage.setItem('kratos-theme', t);
-    $('#theme-btn').textContent = t==='dark' ? '🌙' : '☀️';
-    document.querySelector('meta[name=theme-color]')?.setAttribute('content', t==='dark'?'#07080c':'#f3f6fb'); }
-  function initTheme(){ applyTheme(localStorage.getItem('kratos-theme') || 'dark'); }
-  function toggleTheme(){ applyTheme(document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark'); }
-
-  function show(view){ ['auth-view','config-view','app-view'].forEach(v=>$('#'+v).classList.toggle('hidden', v!==view)); }
-
-  // ---------- Carga de datos ----------
-  async function loadAll(){
-    cache.profile  = await DB.getProfile();
-    cache.exercises= await DB.getExercises();
-    cache.sets     = await DB.getAllSets();
-    cache.weights  = await DB.getWeights();
-    cache.measurements = await DB.getMeasurements();
-    // Tablas de Fase 1 (nutrición/fotos): pueden no existir aún si no se corrió la migración.
-    try { cache.foodLogs = await DB.getFoodLogs(); } catch { cache.foodLogs = []; }
-    try { cache.photos   = await DB.getPhotos();   } catch { cache.photos = []; }
-    // Tablas de Fase 2 (salud/objetivos): idem.
-    try { cache.sleep     = await DB.getSleep();     } catch { cache.sleep = []; }
-    try { cache.wellness  = await DB.getWellness();  } catch { cache.wellness = []; }
-    try { cache.habits    = await DB.getHabits();    } catch { cache.habits = []; }
-    try { cache.habitLogs = await DB.getHabitLogs(); } catch { cache.habitLogs = []; }
-    try { cache.injuries  = await DB.getInjuries();  } catch { cache.injuries = []; }
-    try { cache.goals     = await DB.getGoals();     } catch { cache.goals = []; }
-    try { cache.cardio    = await DB.getCardio();    } catch { cache.cardio = []; }
-    try { cache.rehab     = await DB.getRehab();     } catch { cache.rehab = []; }
-    try { cache.recipes        = await DB.getRecipes();        } catch { cache.recipes = []; }
-    try { cache.supplements    = await DB.getSupplements();    } catch { cache.supplements = []; }
-    try { cache.supplementLogs = await DB.getSupplementLogs(); } catch { cache.supplementLogs = []; }
-    try { cache.mesocycles     = await DB.getMesocycles();     } catch { cache.mesocycles = []; }
+  // Ejecuta, recarga lo indicado y vuelve a dibujar (los avisos se recalculan solos)
+  async function act(fn, reload, msg){
+    try { await fn(); await reload?.(); derive(); Offline.saveCache(cache); if (msg) UI.toast(msg); }
+    catch(e){ UI.toast(Offline.isOfflineError(e) ? '📴 Necesitas conexión para esto' : 'Error: '+(e.message||'no se pudo guardar')); }
+    render();
   }
+  const reload = (...keys) => async () => { const map = { exercises:DB.getExercises, sets:DB.getAllSets, foodLogs:DB.getFoodLogs, foods:DB.getFoods, sleep:DB.getSleep, wellness:DB.getWellness,
+      habits:DB.getHabits, habitLogs:DB.getHabitLogs, injuries:DB.getInjuries, goals:DB.getGoals, cardio:DB.getCardio, rehab:DB.getRehab, recipes:DB.getRecipes,
+      supplements:DB.getSupplements, supplementLogs:DB.getSupplementLogs, mesocycles:DB.getMesocycles, photos:DB.getPhotos, profile:DB.getProfile, salud:DB.getSalud,
+      legacyWeights:DB.getWeights, legacyMeasures:DB.getMeasurements, sessionsMeta:DB.getWorkoutSessions };
+    await Promise.all(keys.map(async k => { cache[k] = await map[k](); })); };
 
-  async function ensureSeed(){
-    if (!cache.exercises.length) {
-      await DB.bulkInsertExercises(SEED_EXERCISES.map(e=>({...e})));
-      cache.exercises = await DB.getExercises();
-    }
-    if (!cache.profile) {
-      await DB.saveProfile({ ...SEED_PROFILE });
-      cache.profile = await DB.getProfile();
-    }
+  // Medición en Mi Salud; si no hay señal se aplica localmente y queda en cola
+  async function saveMedicion(m, msg){
+    const ok = await tryWrite('medicion', ()=>DB.addMedicion({ ...m }), { ...m }, ()=>{
+      if (cache.salud) cache.salud.med.push({ ...m, id:null, origen:'manual', created_at:new Date().toISOString() }); });
+    if (ok) { await reload('salud')().catch(()=>{}); derive(); Offline.saveCache(cache); if (msg) UI.toast(msg); }
+    render();
   }
 
   // ---------- Contexto para la IA ----------
+  // Solo datos de entrenamiento y hábitos: nada del registro clínico sale hacia Gemini.
   function buildAIContext(){
-    const p = cache.profile || {};
-    const lw = lastWeightKg();
-    const t = Logic.effectiveTargets(p, lw);
-    const today = Logic.todayISO();
-    const sumToday = Logic.sumFoods(cache.foodLogs.filter(l=>l.fecha===today));
-    const trend = Logic.weeklyTrend(cache.weights);
-    const prs = Logic.prsByExercise(cache.sets);
-    const recientes = [...new Set(cache.sets.map(s=>s.fecha))].sort().slice(-3);
-    const sesionesTxt = recientes.map(f=>{
-      const ss = cache.sets.filter(s=>s.fecha===f);
-      const exs = [...new Set(ss.map(s=>s.ejercicio))];
-      return `${f} (${ss[0]?.rutina||'?'}): ${exs.map(e=>{ const r=ss.filter(x=>x.ejercicio===e); const mx=Math.max(...r.map(x=>x.peso_kg)); return `${e} ${mx}kg×${Math.max(...r.map(x=>x.reps))}`; }).join('; ')}`;
-    }).join('\n');
-    const objetivos = (cache.goals||[]).filter(g=>g.estado==='activo').map(g=>`${g.titulo} (meta ${g.valor_objetivo}${g.unidad||''})`).join('; ');
-    const lesiones = (cache.injuries||[]).filter(i=>i.estado==='activa').map(i=>i.zona).join(', ');
+    const c = ctx(), p = c.profile, t = c.targets, today = Logic.todayISO();
+    const sum = Logic.sumFoods(cache.foodLogs.filter(l=>l.fecha===today)), trend = Logic.weeklyTrend(cache.weights);
+    const ses = c.sessions.slice(0,3).map(s => `${s.fecha} (${s.rutina||'?'}): ${s.ejercicios.map(e => { const r=s.sets.filter(x=>x.ejercicio===e); return `${e} ${Math.max(...r.map(x=>x.peso_kg))}kg×${Math.max(...r.map(x=>x.reps))}`; }).join('; ')}`).join('\n');
+    const week = Logic.muscleWeek(cache.sets, cache.exercises).map(m=>`${m.label} ${m.series}`).join(', ');
+    const objetivos = cache.goals.filter(g=>g.estado==='activo').map(g=>`${g.titulo} (meta ${g.valor_objetivo}${g.unidad||''})`).join('; ');
+    const lesiones = cache.injuries.filter(i=>i.estado==='activa').map(i=>i.zona).join(', ');
     return [
       `Perfil: ${p.edad||'?'} años, ${p.sexo==='m'?'mujer':'hombre'}, ${p.estatura_cm||'?'} cm, objetivo ${p.objetivo||'?'}.`,
-      `Peso actual ${lw||'?'} kg, tendencia ${trend!=null?trend+' kg/sem':'s/d'}.`,
-      t.kcal?`Objetivo nutricional: ${t.kcal} kcal, ${t.prot}g prot. Hoy lleva ${Math.round(sumToday.kcal)} kcal / ${Math.round(sumToday.prot)}g prot.`:'',
-      `Total sesiones: ${new Set(cache.sets.map(s=>s.fecha)).size}, PRs: ${Object.keys(prs).length}.`,
-      sesionesTxt?`Últimas sesiones:\n${sesionesTxt}`:'Sin sesiones registradas.',
-      objetivos?`Objetivos activos: ${objetivos}.`:'',
-      lesiones?`Lesiones activas: ${lesiones}.`:'',
+      `Peso ${c.lastWeight||'?'} kg, tendencia ${trend!=null?trend+' kg/sem':'s/d'}, cintura ${c.medidas.cintura||'?'} cm.`,
+      t.kcal?`Objetivo: ${t.kcal} kcal, ${t.prot} g proteína. Hoy lleva ${Math.round(sum.kcal)} kcal y ${Math.round(sum.prot)} g.`:'',
+      `Sueño hoy: ${Logic.saludValue(cache.salud,'sueno',today)??'?'} h. Pasos hoy: ${Logic.saludValue(cache.salud,'pasos',today)??'?'}.`,
+      `Series 7 días por grupo: ${week}.`, `Próxima rutina: ${c.nextRoutine||'libre'}.`,
+      ses?`Últimas sesiones:\n${ses}`:'Sin sesiones registradas.', objetivos?`Objetivos: ${objetivos}.`:'', lesiones?`Lesiones activas: ${lesiones}.`:'',
     ].filter(Boolean).join('\n');
   }
 
   // ---------- Navegación ----------
-  function setTab(tab){
-    currentTab = tab;
-    document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
-    render();
-  }
-
+  const TABS = { hoy:'hoy', entreno:'entreno', nutricion:'nutricion', cuerpo:'cuerpo', salud:'salud', ajustes:'ajustes' };
+  function go(tab){ currentTab = TABS[tab] || 'hoy'; render(); window.scrollTo(0,0); }
   function render(){
-    if (currentTab==='hoy') {
-      const day = pickedDay || Logic.nextDay(cache.sets);
-      pickedDay = day;
-      if (trainingMode) {
-        UI.setMain(UI.renderHoy({ day, exercises:cache.exercises, sets:cache.sets,
-          onChangeDay: d => { pickedDay=d; render(); },
-          onSave: saveSession,
-          onBack: () => { trainingMode=false; relWake(); render(); } }));
-      } else {
-        UI.setMain(UI.renderDashboard({ profile:cache.profile, exercises:cache.exercises, sets:cache.sets,
-          weights:cache.weights, measurements:cache.measurements, foodLogs:cache.foodLogs, lastWeight:lastWeightKg(), day,
-          sleep:cache.sleep, wellness:cache.wellness, injuries:cache.injuries,
-          onTrain: () => { trainingMode=true; reqWake(); render(); },
-          onGo: tab => setTab(tab),
-          onCoach: () => UI.startCoachChat(messages => DB.askAI(messages, buildAIContext())) }));
-      }
-    } else if (currentTab==='rutina') {
-      UI.setMain(UI.renderRutina({ exercises:cache.exercises, mesocycles:cache.mesocycles,
-        onAdd: day => UI.setMain(UI.exerciseForm(null, day, onExForm)),
-        onAddFromLib: (day, lib) => UI.setMain(UI.exerciseForm({ dia:day, nombre:lib.nombre, grupo:lib.grupo, unidad:lib.unidad }, day, onExForm)),
-        onEdit: ex => UI.setMain(UI.exerciseForm(ex, ex.dia, onExForm)),
-        onDelete: async id => { await DB.deleteExercise(id); cache.exercises=await DB.getExercises(); render(); UI.toast('Eliminado'); },
-        onAddMeso: async m => { await DB.addMesocycle(m); cache.mesocycles=await DB.getMesocycles(); Offline.saveCache(cache); render(); UI.toast('Mesociclo iniciado'); },
-        onDeleteMeso: async id => { await DB.deleteMesocycle(id); cache.mesocycles=await DB.getMesocycles(); Offline.saveCache(cache); render(); } }));
-    } else if (currentTab==='avances') {
-      UI.setMain(UI.renderAvances({ sets:cache.sets, exercises:cache.exercises,
-        weights:cache.weights, foodLogs:cache.foodLogs, cardio:cache.cardio, habitLogs:cache.habitLogs,
-        profile:cache.profile, lastWeight:lastWeightKg() }));
-    } else if (currentTab==='peso') {
-      UI.setMain(UI.renderPeso({ weights:cache.weights, profile:cache.profile, measurements:cache.measurements, photos:cache.photos,
-        onAdd: async w => { const ok = await tryWrite('weight', ()=>DB.addWeight(w), w,
-            ()=>{ cache.weights=[...cache.weights.filter(x=>x.fecha!==w.fecha), {...w}].sort((a,b)=>a.fecha<b.fecha?-1:1); });
-          if(ok){ cache.weights=await DB.getWeights(); Offline.saveCache(cache); UI.toast('Peso guardado'); } render(); },
-        onDelete: async id => { await DB.deleteWeight(id); cache.weights=await DB.getWeights(); Offline.saveCache(cache); render(); },
-        onAddMeasure: async m => { const ok = await tryWrite('measure', ()=>DB.addMeasurement(m), m,
-            ()=>{ cache.measurements=[...cache.measurements, {...m}]; });
-          if(ok){ cache.measurements=await DB.getMeasurements(); Offline.saveCache(cache); UI.toast('Medida guardada'); } render(); },
-        onDeleteMeasure: async id => { await DB.deleteMeasurement(id); cache.measurements=await DB.getMeasurements(); Offline.saveCache(cache); render(); },
-        onAddPhoto: async (f, pose, fecha) => { try { UI.toast('Subiendo foto...'); await DB.uploadPhoto(f, pose, fecha); cache.photos=await DB.getPhotos(); render(); UI.toast('Foto guardada'); } catch(e){ UI.toast('Error al subir: '+(e.message||'')); } },
-        onDeletePhoto: async (id, path) => { await DB.deletePhoto(id, path); cache.photos=await DB.getPhotos(); render(); } }));
-    } else if (currentTab==='nutricion') {
-      nutriDate = nutriDate || Logic.todayISO();
-      const reloadNutri = async () => { try {
-        cache.recipes=await DB.getRecipes(); cache.supplements=await DB.getSupplements(); cache.supplementLogs=await DB.getSupplementLogs();
-        Offline.saveCache(cache);
-      } catch(e){ UI.toast('Error: '+(e.message||'')); } render(); };
-      UI.setMain(UI.renderNutricion({ logs:cache.foodLogs, profile:cache.profile, lastWeight:lastWeightKg(), weights:cache.weights, date:nutriDate,
-        recipes:cache.recipes, supplements:cache.supplements, supplementLogs:cache.supplementLogs,
-        onChangeDate: d => { nutriDate=d; render(); },
-        onSearch: term => DB.searchFoods(term),
-        onScan: code => DB.searchFoodByBarcode(code),
-        onLog: async l => { const ok = await tryWrite('food', ()=>DB.addFoodLog(l), l,
-            ()=>{ cache.foodLogs=[...cache.foodLogs, {...l}]; });
-          if(ok){ cache.foodLogs=await DB.getFoodLogs(); Offline.saveCache(cache); UI.toast('Registrado'); } render(); },
-        onDeleteLog: async id => { await DB.deleteFoodLog(id); cache.foodLogs=await DB.getFoodLogs(); Offline.saveCache(cache); render(); },
-        onAddRecipe: async r => { await DB.addRecipe(r); await reloadNutri(); UI.toast('Receta guardada'); },
-        onDeleteRecipe: async id => { await DB.deleteRecipe(id); await reloadNutri(); },
-        onAddSupplement: async s => { await DB.addSupplement(s); await reloadNutri(); UI.toast('Suplemento agregado'); },
-        onDeleteSupplement: async id => { await DB.deleteSupplement(id); await reloadNutri(); },
-        onToggleSupplement: async (sid, fecha, done) => { await DB.setSupplementLog(sid, fecha, done); await reloadNutri(); } }));
-    } else if (currentTab==='salud') {
-      const reload = async () => { try {
-        cache.sleep=await DB.getSleep(); cache.wellness=await DB.getWellness();
-        cache.habits=await DB.getHabits(); cache.habitLogs=await DB.getHabitLogs();
-        cache.injuries=await DB.getInjuries(); cache.goals=await DB.getGoals();
-        cache.cardio=await DB.getCardio(); cache.rehab=await DB.getRehab();
-        Offline.saveCache(cache);
-      } catch(e){ UI.toast('Error: '+(e.message||'')); } render(); };
-      UI.setMain(UI.renderSalud({
-        sleep:cache.sleep, wellness:cache.wellness, habits:cache.habits, habitLogs:cache.habitLogs,
-        injuries:cache.injuries, goals:cache.goals, cardio:cache.cardio, rehab:cache.rehab, profile:cache.profile,
-        ctx:{ lastWeight:lastWeightKg(), measurements:cache.measurements, sets:cache.sets },
-        onCardio: async c => { await DB.addCardio(c); await reload(); UI.toast('Cardio registrado'); },
-        onDeleteCardio: async id => { await DB.deleteCardio(id); await reload(); },
-        onRehab: async r => { await DB.addRehab(r); await reload(); UI.toast('Dolor registrado'); },
-        onSleep: async s => { await DB.addSleep(s); await reload(); UI.toast('Sueño guardado'); },
-        onWellness: async w => { await DB.addWellness(w); await reload(); UI.toast('Estado guardado'); },
-        onAddHabit: async h => { await DB.addHabit(h); await reload(); },
-        onDeleteHabit: async id => { await DB.deleteHabit(id); await reload(); },
-        onToggleHabit: async (hid, fecha, done) => { await DB.setHabitLog(hid, fecha, done); await reload(); },
-        onAddInjury: async i => { await DB.addInjury(i); await reload(); UI.toast('Lesión registrada'); },
-        onUpdateInjury: async (id, patch) => { await DB.updateInjury(id, patch); await reload(); },
-        onDeleteInjury: async id => { await DB.deleteInjury(id); await reload(); },
-        onAddGoal: async g => { await DB.addGoal(g); await reload(); UI.toast('Objetivo creado'); },
-        onDeleteGoal: async id => { await DB.deleteGoal(id); await reload(); } }));
-    } else if (currentTab==='ajustes') {
-      UI.setMain(UI.renderAjustes({ profile:cache.profile, email:(DB.currentUserEmail||''), lastWeight:lastWeightKg(),
-        onSaveProfile: async p => { await DB.saveProfile({...cache.profile, ...p}); cache.profile=await DB.getProfile(); UI.toast('Perfil guardado'); render(); },
-        onExport: exportCSV, onImport: importCSV,
-        onPushEnable: async () => { try { await Push.enable(); UI.toast('🔔 Notificaciones activadas'); } catch(e){ UI.toast(e.message||'Error'); } render(); },
-        onPushDisable: async () => { try { await Push.disable(); UI.toast('Notificaciones desactivadas'); } catch(e){ UI.toast(e.message||'Error'); } render(); },
-        onPushTest: async () => { try { await Push.test(); } catch(e){ UI.toast(e.message||'Error'); } },
-        onSaveReminders: async r => { try { await DB.saveReminders(r); cache.profile=await DB.getProfile(); Offline.saveCache(cache); UI.toast('Recordatorios guardados'); } catch(e){ UI.toast(e.message||'Error'); } },
-        onSignOut: async () => { await DB.signOut(); location.reload(); } }));
-    }
+    document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===currentTab));
+    document.body.classList.toggle('in-session', !!draft && currentTab==='entreno');
+    const y = window.scrollY; UI.setMain(Views[currentTab]()); window.scrollTo(0,y);
+    const n = Offline.pending(), s = $('#sync-pill'); s.textContent = n ? `⏳ ${n}` : ''; s.classList.toggle('hidden', !n);
   }
 
-  async function onExForm(data){
-    if (data === null) { setTab('rutina'); return; }
-    if (data.id) await DB.updateExercise(data.id, data);
-    else await DB.addExercise(data);
-    cache.exercises = await DB.getExercises();
-    UI.toast('Guardado'); setTab('rutina');
-  }
-
+  // ---------- Sesión ----------
+  let wakeLock = null;
+  async function reqWake(){ try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch {} }
+  async function relWake(){ try { await wakeLock?.release(); } catch {} wakeLock = null; }
+  function beginDraft(d){ draft = d; Offline.saveDraft(d); reqWake(); go('entreno'); }
+  function endDraft(){ draft = null; Offline.clearDraft(); relWake(); UI.stopRest(); render(); }
   let saving = false;
-  async function saveSession(rows){
-    if (saving) return; // evita doble guardado (doble toque / reentrada)
-    saving = true;
+  async function saveSession(d, rows, meta){
+    if (saving) return; saving = true;
     try {
-      const prs = Logic.newPRs(cache.sets, rows);
-      const ok = await tryWrite('sets', ()=>DB.addSets(rows), rows,
-        ()=>{ cache.sets = cache.sets.concat(rows.map(r=>({...r}))); });
-      if (ok) { cache.sets = await DB.getAllSets(); Offline.saveCache(cache); }
-      pickedDay = null; // próxima vez alterna
-      trainingMode = false; relWake();
-      if (ok) UI.toast(prs.length ? '🏆 ¡Nuevo PR en ' + prs[0].ejercicio + '!' : '💪 Sesión guardada');
-      setTab('avances');
+      const prev = d.replaceIds ? cache.sets.filter(s=>!d.replaceIds.includes(s.id)) : cache.sets;
+      const prs = Logic.newPRs(prev, rows);
+      const ok = await tryWrite('sets', ()=>DB.addSets(rows), rows, ()=>{ cache.sets = cache.sets.concat(rows.map(r=>({...r}))); });
+      if (ok) {
+        if (d.replaceIds) await DB.deleteSetsByIds(d.replaceIds);
+        if (meta.rpe || meta.notas || meta.duracion_min) await DB.saveWorkoutSession({ fecha:d.fecha, rutina:d.rutina, nombre:d.nombre, rpe:meta.rpe, duracion_min:meta.duracion_min, notas:meta.notas });
+        for (const it of meta.routineChanges) await applyRoutineChange(d, it);
+        await reload('sets','exercises','sessionsMeta')(); derive(); Offline.saveCache(cache);
+      }
+      draft = null; Offline.clearDraft(); relWake(); UI.stopRest(); go('hoy');
+      if (ok) sessionSummary({ rows, prs, mins:meta.duracion_min });
     } finally { saving = false; }
+  }
+  // Un cambio confirmado en la sesión se vuelve parte de la rutina
+  async function applyRoutineChange(d, it){
+    const fields = { nombre:it.nombre, grupo:it.grupo, unidad:it.unidad };
+    const target = it.replacesId && cache.exercises.find(e=>e.id===it.replacesId);
+    if (target) return DB.updateExercise(target.id, fields);
+    const orden = cache.exercises.filter(e=>e.dia===d.rutina).length+1;
+    await DB.addExercise({ ...fields, ...it.obj, dia:d.rutina, orden });
   }
 
   // ---------- CSV (esquema Kratos) ----------
   function download(name, content){
-    const blob = new Blob([content], { type:'text/csv;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob); a.download = name; a.click();
-    URL.revokeObjectURL(a.href);
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([content], { type:'text/csv;charset=utf-8' }));
+    a.download = name; a.click(); URL.revokeObjectURL(a.href);
   }
-  function csvField(v){ if(v==null) return ''; const s=String(v); return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s; }
+  const csvField = v => { if(v==null) return ''; const s=String(v); return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s; };
   function exportCSV(kind){
-    if (kind==='entrenamientos'){
-      const head='fecha,rutina,ejercicio,serie,reps,peso_kg,rir,observaciones';
-      const lines = cache.sets.map(s=>[s.fecha,s.rutina,s.ejercicio,s.serie,s.reps,s.peso_kg,s.rir,s.observaciones].map(csvField).join(','));
-      download('entrenamientos.csv', [head,...lines].join('\n'));
-    } else {
-      const head='fecha,peso_kg,observaciones';
-      const lines = cache.weights.map(w=>[w.fecha,w.peso_kg,w.observaciones].map(csvField).join(','));
-      download('peso_corporal.csv', [head,...lines].join('\n'));
-    }
+    if (kind==='entrenamientos') download('entrenamientos.csv', ['fecha,rutina,ejercicio,serie,reps,peso_kg,rir,observaciones', ...cache.sets.map(s=>[s.fecha,s.rutina,s.ejercicio,s.serie,s.reps,s.peso_kg,s.rir,s.observaciones].map(csvField).join(','))].join('\n'));
+    else download('peso_corporal.csv', ['fecha,peso_kg,observaciones', ...cache.weights.map(w=>[w.fecha,w.peso_kg,w.observaciones].map(csvField).join(','))].join('\n'));
     UI.toast('CSV exportado');
   }
   async function importCSV(file){
-    const text = await file.text();
-    const lines = text.split(/\r?\n/).filter(l=>l.trim());
-    const head = lines.shift().split(',').map(h=>h.trim());
-    const idx = n => head.indexOf(n);
-    const rows = lines.map(l=>{
-      const c = l.split(','); // import simple (sin comillas complejas)
-      return { fecha:c[idx('fecha')], rutina:c[idx('rutina')]||null, ejercicio:c[idx('ejercicio')],
-        serie:Number(c[idx('serie')])||1, reps:Number(c[idx('reps')])||0,
-        peso_kg:Number(c[idx('peso_kg')])||0, rir:c[idx('rir')]?Number(c[idx('rir')]):null,
-        observaciones:c[idx('observaciones')]||null };
-    }).filter(r=>r.ejercicio && r.fecha);
+    const lines = (await file.text()).split(/\r?\n/).filter(l=>l.trim()), head = lines.shift().split(',').map(h=>h.trim()), idx = n => head.indexOf(n);
+    const rows = lines.map(l=>{ const c=l.split(','); return { fecha:c[idx('fecha')], rutina:c[idx('rutina')]||null, ejercicio:c[idx('ejercicio')], serie:Number(c[idx('serie')])||1, reps:Number(c[idx('reps')])||0,
+      peso_kg:Number(c[idx('peso_kg')])||0, rir:c[idx('rir')]?Number(c[idx('rir')]):null, observaciones:c[idx('observaciones')]||null }; }).filter(r=>r.ejercicio&&r.fecha);
     if(!rows.length) return UI.toast('CSV vacío o inválido');
-    await DB.addSets(rows);
-    cache.sets = await DB.getAllSets();
-    UI.toast(`Importadas ${rows.length} series`); setTab('avances');
+    await act(()=>DB.addSets(rows), reload('sets'), `Importadas ${rows.length} series`);
   }
 
-  // ---------- Auth UI ----------
+  // ---------- Auth ----------
+  function show(view){ ['auth-view','config-view','app-view'].forEach(v=>$('#'+v).classList.toggle('hidden', v!==view)); }
   let mode = 'in';
   function initAuthUI(){
     $('#auth-toggle').onclick = () => { mode = mode==='in'?'up':'in';
       $('#auth-submit').textContent = mode==='in'?'Entrar':'Crear cuenta';
-      $('#auth-toggle').textContent = mode==='in'?'¿Primera vez? Crear cuenta':'¿Ya tienes cuenta? Entrar';
-      $('#auth-msg').textContent=''; };
+      $('#auth-toggle').textContent = mode==='in'?'¿Primera vez? Crear cuenta':'¿Ya tienes cuenta? Entrar'; $('#auth-msg').textContent=''; };
     $('#auth-form').onsubmit = async e => {
       e.preventDefault();
-      const email=$('#auth-email').value.trim(), pass=$('#auth-pass').value;
-      const msg=$('#auth-msg'); msg.className='auth-msg'; msg.textContent='Procesando...';
+      const email=$('#auth-email').value.trim(), pass=$('#auth-pass').value, msg=$('#auth-msg');
+      msg.className='auth-msg'; msg.textContent='Procesando...';
       try {
-        if (mode==='in') await DB.signIn(email,pass);
-        else { await DB.signUp(email,pass); }
-        DB.currentUserEmail = email;
+        if (mode==='in') await DB.signIn(email,pass); else await DB.signUp(email,pass);
         const u = await DB.currentUser();
         if(!u){ msg.className='auth-msg ok'; msg.textContent='Cuenta creada. Revisa tu email para confirmar, luego entra.'; return; }
         await startApp(email);
       } catch(err){ msg.className='auth-msg err'; msg.textContent = err.message || 'Error de autenticación'; }
     };
   }
-
+  // Pinta al tiro con lo guardado y actualiza por detrás
   async function startApp(email){
-    DB.currentUserEmail = email;
-    show('app-view');
-    UI.setMain(UI.el('div','empty','Cargando...'));
+    DB.currentUserEmail = email; show('app-view');
+    draft = Offline.loadDraft();
+    const c = Offline.loadCache();
+    if (c) { Object.assign(cache, c); derive(); go(draft?'entreno':'hoy'); }
+    else UI.setMain(UI.el('div','empty','Cargando…'));
     try {
-      await loadAll();
-      Offline.saveCache(cache);
+      if (navigator.onLine && Offline.pending()) await Offline.flush(DB);
+      await loadAll(); Offline.saveCache(cache); lastRefresh = Date.now();
       try { await ensureSeed(); } catch {}
-      if (navigator.onLine && Offline.pending()) { const n = await Offline.flush(DB); if(n){ await loadAll(); Offline.saveCache(cache); } }
-    } catch (e) {
-      // Sin conexión: hidrata desde la caché local para seguir usable.
-      const c = Offline.loadCache();
-      if (c) { Object.assign(cache, c); UI.toast('📴 Modo offline · datos guardados'); }
-      else { UI.setMain(UI.el('div','empty','Sin conexión y sin datos en caché. Conéctate para cargar.')); return; }
+      if (!busy() || !c) go(c ? currentTab : draft?'entreno':'hoy');
+    } catch {
+      if (c) UI.toast('📴 Sin conexión · usando datos guardados');
+      else UI.setMain(UI.el('div','empty','Sin conexión y sin datos guardados. Conéctate para cargar.'));
     }
-    setTab('hoy');
   }
+
+  // ---------- Instalación ----------
+  const isInstalled = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const canInstall = () => !!installEvt && !isInstalled();
+  async function install(){ if(!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; render(); }
+
+  // ---------- Tema ----------
+  function applyTheme(t){ document.documentElement.setAttribute('data-theme', t); localStorage.setItem('kratos-theme', t);
+    $('#theme-btn').textContent = t==='dark' ? '🌙' : '☀️';
+    document.querySelector('meta[name=theme-color]')?.setAttribute('content', t==='dark'?'#1b1613':'#f4ecdf'); }
+  const initTheme = () => applyTheme(localStorage.getItem('kratos-theme2') || (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'));
+  function toggleTheme(){ const t = document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark'; localStorage.setItem('kratos-theme2',t); applyTheme(t); if (Object.keys(cache).length) render(); }
+
+  // Registro rápido desde cualquier pestaña
+  function quickAdd(){
+    const n = UI.el('div','quick');
+    [['⚖️','Peso',()=>weightSheet()],['💧','Agua',()=>addWater()],['🍽️','Comida',()=>App.quickFood()],['📏','Medida',()=>measureSheet()],
+     ['🏃','Actividad',()=>App.activitySheet()],['🆓','Entreno libre',()=>App.startFree()]].forEach(([i,t,f]) => { const b=UI.el('button','q-btn',`<i>${i}</i><span>${t}</span>`); b.onclick=()=>{ s.close(); f(); }; n.appendChild(b); });
+    const s = UI.sheet('Registrar', n);
+  }
+  const weightSheet = () => App.weightSheet(), measureSheet = () => App.measureSheet();
+  const sessionSummary = a => App.sessionSummary(a);
+
+  // ---------- Acciones de las vistas ----------
+  const addWater = (ml, fecha = Logic.todayISO()) => saveMedicion({ fecha, tipo:'agua', valor:ml || cache.salud?.metas?.vaso || 250 }, '💧 Agua sumada');
+  const api = {
+    cache, ctx, alerts, dismissAlert, go, render, draft:()=>draft, beginDraft, endDraft, saveSession, exportCSV, importCSV, addWater,
+    canInstall, isInstalled, install,
+    openCoach:() => UI.startCoachChat(m => DB.askAI(m, buildAIContext())),
+    saveCustomExercise:e => DB.addExercise({ nombre:e.nombre, grupo:e.grupo, unidad:e.unidad, dia:null, activo:true }).then(reload('exercises')).catch(()=>{}),
+    saveExercise:e => { const { id, ...f } = e; return act(()=>id?DB.updateExercise(id,f):DB.addExercise(f), reload('exercises'), 'Guardado'); },
+    deleteExercise:id => act(()=>DB.deleteExercise(id), reload('exercises'), 'Eliminado'),
+    moveExercise:(list,i) => act(()=>{ const o=[...list]; [o[i-1],o[i]]=[o[i],o[i-1]]; return Promise.all(o.map((e,k)=>DB.updateExercise(e.id,{ orden:k+1 }))); }, reload('exercises')),
+    renameRoutine:(a,b) => act(()=>Promise.all(cache.exercises.filter(e=>e.dia===a).map(e=>DB.updateExercise(e.id,{ dia:b }))), reload('exercises'), 'Rutina renombrada'),
+    deleteRoutine:r => act(()=>Promise.all(cache.exercises.filter(e=>e.dia===r).map(e=>DB.deleteExercise(e.id))), reload('exercises'), 'Rutina eliminada'),
+    applyTemplate:t => act(()=>DB.bulkInsertExercises(Object.entries(t.dias).flatMap(([dia,names])=>names.map((nombre,i)=>{ const l=EXERCISE_LIBRARY.find(x=>x.nombre===nombre)||{}, compound=['barra','maquina'].includes(l.unidad)&&l.patron!=='aislamiento';
+      return { dia, orden:i+1, nombre, grupo:l.grupo||'', unidad:l.unidad||'mancuerna', series_obj:3, reps_min:compound?6:10, reps_max:compound?10:15, rir_obj:2, incremento_kg:l.unidad==='barra'?2.5:1, activo:true }; }))), reload('exercises'), 'Rutinas agregadas'),
+    addMeso:m => act(()=>DB.addMesocycle(m), reload('mesocycles'), 'Bloque iniciado'),
+    deleteMeso:id => act(()=>DB.deleteMesocycle(id), reload('mesocycles')),
+    deleteSession:s => act(()=>DB.deleteSetsByIds(s.sets.map(x=>x.id).filter(Boolean)), reload('sets'), 'Sesión eliminada'),
+    saveCardio:async c => { const ok = await tryWrite('cardio', ()=>DB.addCardio({...c}), {...c}, ()=>cache.cardio.unshift({...c})); if(ok){ await reload('cardio')(); Offline.saveCache(cache); UI.toast('Actividad registrada 💪'); } render(); },
+    deleteCardio:id => act(()=>DB.deleteCardio(id), reload('cardio')),
+    logFood:async l => { const ok = await tryWrite('food', ()=>DB.addFoodLog({...l}), {...l}, ()=>cache.foodLogs.push({...l})); if(ok){ await reload('foodLogs')(); Offline.saveCache(cache); UI.toast('Registrado'); } render(); },
+    logFoods:ls => act(()=>Promise.all(ls.map(l=>DB.addFoodLog({...l}))), reload('foodLogs'), `${ls.length} alimentos agregados`),
+    updateFood:(id,p) => act(()=>DB.updateFoodLog(id,p), reload('foodLogs'), 'Actualizado'),
+    deleteFood:id => act(()=>DB.deleteFoodLog(id), reload('foodLogs')),
+    saveFavorite:f => act(()=>DB.addFood(f), reload('foods'), '⭐ Guardado en favoritos'),
+    addRecipe:r => act(()=>DB.addRecipe(r), reload('recipes'), 'Receta guardada'),
+    addSupplement:s => act(()=>DB.addSupplement(s), reload('supplements')),
+    deleteSupplement:id => act(()=>DB.deleteSupplement(id), reload('supplements')),
+    toggleSupplement:(id,f,d) => act(()=>DB.setSupplementLog(id,f,d), reload('supplementLogs')),
+    addWeight:w => saveMedicion({ fecha:w.fecha, tipo:'peso', valor:w.valor, condicion:w.condicion }, 'Peso guardado en Mi Salud'),
+    deleteWeight:r => act(()=>r.origen==='salud'?DB.deleteMedicion(r.id):DB.deleteWeight(r.id), reload('salud','legacyWeights'), 'Eliminado'),
+    addMeasure:m => m.medida==='cintura' ? saveMedicion({ fecha:m.fecha, tipo:'cintura', valor:m.valor_cm }, 'Cintura guardada en Mi Salud')
+      : (async()=>{ const ok=await tryWrite('measure',()=>DB.addMeasurement({...m}),{...m},()=>cache.legacyMeasures.push({...m})); if(ok){ await reload('legacyMeasures')(); derive(); UI.toast('Medida guardada'); } render(); })(),
+    addPhoto:(f,p,d) => act(()=>DB.uploadPhoto(f,p,d), reload('photos'), 'Foto guardada'),
+    deletePhoto:(id,path) => act(()=>DB.deletePhoto(id,path), reload('photos')),
+    // Las horas van a Mi Salud y sin tocar lo que subió el smartband; la calidad y el ánimo quedan aquí.
+    saveCheckin:({ fecha, horas, calidad, animo, estres, energia }) => act(async()=>{
+      await DB.addSleep({ fecha, horas, calidad }); await DB.addWellness({ fecha, animo, estres, energia });
+      if (horas) { const rows=(cache.salud?.med||[]).filter(m=>m.tipo==='sueno'&&m.fecha===fecha), mine=rows.find(m=>m.origen!=='wearable');
+        if (mine) await DB.updateMedicion(mine.id,{ valor:horas }); else if (!rows.length) await DB.addMedicion({ fecha, tipo:'sueno', valor:horas }); }
+    }, reload('sleep','wellness','salud'), 'Check-in guardado'),
+    addGoal:g => act(()=>DB.addGoal(g), reload('goals'), 'Objetivo creado'),
+    deleteGoal:id => act(()=>DB.deleteGoal(id), reload('goals')),
+    addHabit:h => act(()=>DB.addHabit(h), reload('habits')),
+    deleteHabit:id => act(()=>DB.deleteHabit(id), reload('habits')),
+    toggleHabit:(id,f,d) => act(()=>DB.setHabitLog(id,f,d), reload('habitLogs')),
+    addInjury:i => act(()=>DB.addInjury(i), reload('injuries'), 'Lesión registrada'),
+    updateInjury:(id,p) => act(()=>DB.updateInjury(id,p), reload('injuries')),
+    addRehab:r => act(()=>DB.addRehab(r), reload('rehab'), 'Dolor registrado'),
+    saveProfile:p => act(()=>DB.saveProfile({ ...cache.profile, ...p }), reload('profile'), 'Guardado'),
+    saveReminders:r => act(()=>DB.saveReminders(r), reload('profile'), 'Recordatorios guardados'),
+    pushEnable:async () => { try { await Push.enable(); UI.toast('🔔 Activadas'); } catch(e){ UI.toast(e.message||'Error'); } render(); },
+    pushDisable:async () => { try { await Push.disable(); UI.toast('Desactivadas'); } catch(e){ UI.toast(e.message||'Error'); } render(); },
+    pushTest:async () => { try { await Push.test(); } catch(e){ UI.toast(e.message||'Error'); } },
+    signOut:async () => { Offline.clearCache(); Offline.clearDraft(); await DB.signOut(); location.reload(); },
+  };
 
   // ---------- Boot ----------
   async function boot(){
     initTheme();
     $('#theme-btn').onclick = toggleTheme;
-    document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{ if(t.dataset.tab==='hoy'){ pickedDay=null; trainingMode=false; relWake(); } setTab(t.dataset.tab); });
-
-    // Sincronización al recuperar conexión
+    $('#set-btn').onclick = () => go('ajustes');
+    $('#fab').onclick = quickAdd;
+    document.querySelectorAll('.tab').forEach(t => t.onclick = () => go(t.dataset.tab));
+    window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; if (DB.uid()) render(); });
+    window.addEventListener('appinstalled', () => { installEvt = null; UI.toast('App instalada 💪'); });
     window.addEventListener('offline', () => UI.toast('📴 Sin conexión'));
-    window.addEventListener('online', async () => {
-      if (!Offline.pending()) return;
-      const n = await Offline.flush(DB);
-      if (n) { try { await loadAll(); Offline.saveCache(cache); render(); } catch {} UI.toast('✅ Sincronizado (' + n + ')'); }
-    });
+    window.addEventListener('online', () => refresh(true));
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState==='visible'){ checkDay(); refresh(); if (draft) reqWake(); } });
+    setInterval(checkDay, 60000);
+    setInterval(() => { if (document.visibilityState==='visible') refresh(); }, 300000);
 
     if (!DB.configured()){ show('config-view'); return; }
-    DB.init();
-    initAuthUI();
+    DB.init(); initAuthUI();
     const u = await DB.currentUser();
-    if (u){ await startApp(u.email); }
-    else show('auth-view');
+    if (u) await startApp(u.email); else show('auth-view');
   }
-
   document.addEventListener('DOMContentLoaded', boot);
+  return api;
 })();

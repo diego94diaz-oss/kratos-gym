@@ -1,31 +1,19 @@
 {
+  "id": "./",
   "name": "Entrenamiento",
   "short_name": "Entrenamiento",
-  "description": "Registro de entrenamiento, progresión de carga y peso corporal.",
+  "description": "Entrenamiento, nutrición y progreso corporal, conectados a Mi Salud.",
+  "lang": "es-CL",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#07080c",
-  "theme_color": "#07080c",
+  "background_color": "#f4ecdf",
+  "theme_color": "#f4ecdf",
+  "categories": ["health", "fitness", "lifestyle"],
   "icons": [
-    {
-      "src": "assets/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "assets/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "assets/icon-512-maskable.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
-    }
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }
