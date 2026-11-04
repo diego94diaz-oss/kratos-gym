@@ -74,3 +74,8 @@ PWA personal de entrenamiento, nutrición y recuperación, pensada para el celul
 - **Edge Functions:** `npx --yes supabase@latest functions deploy <función> --project-ref ivzzgeoeygggaoazcoeq`.
 - **SQL:** ejecutar la migración en el SQL Editor de Supabase. Comprobar RLS en cada tabla nueva.
 - **Pruebas:** `node --test tests/logic.test.mjs`. Para la interfaz, probar a 360-412 px con un servidor estático (el SW no funciona con `file://`), revisar la consola y, si se tocó lo offline, registrar sin red y ver que se sincroniza.
+
+## Fotos de progreso (2026-11-04)
+
+Antes de subir, `DB.uploadPhoto` reduce la foto con `comprimirFoto()` (máx. 1600 px, JPEG 0.82, sin metadatos). No quitar ese paso: las fotos de cámara pesan 4–8 MB y el Storage gratis de Supabase (1 GB) es compartido con todo el ecosistema. Originales anteriores respaldados en `C:\Users\PC\Pictures\Progreso Entrenamiento (originales)`.
+
