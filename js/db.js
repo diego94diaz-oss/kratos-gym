@@ -232,10 +232,33 @@ const DB = (() => {
 
   // ---- Fotos de progreso (Storage privado + metadatos) ----
   const BUCKET = 'progress-photos';
+  // Reduce la foto en el propio dispositivo antes de subirla: máx. 1600 px por lado, JPEG 0.82.
+  // Una foto de cámara pesa 4–8 MB; así queda en ~200 KB (el plan gratis de Supabase tiene 1 GB).
+  // Al redibujar en un canvas se pierden los metadatos EXIF, incluida la ubicación GPS.
+  // Si el navegador no puede decodificarla, se sube el archivo original.
+  async function comprimirFoto(file, max = 1600, calidad = 0.82) {
+    try {
+      const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(bmp.width * k);
+      canvas.height = Math.round(bmp.height * k);
+      canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
+      bmp.close?.();
+      const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', calidad));
+      return blob && blob.size < file.size ? blob : file;
+    } catch (e) {
+      console.warn('No se pudo comprimir la foto; se sube el original.', e);
+      return file;
+    }
+  }
   async function uploadPhoto(file, pose, fecha) {
-    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g,'') || 'jpg';
+    const foto = await comprimirFoto(file);
+    const ext = foto === file
+      ? ((file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g,'') || 'jpg')
+      : 'jpg';
     const path = `${uid()}/${fecha}_${pose}_${Date.now()}.${ext}`;
-    const up = await sb.storage.from(BUCKET).upload(path, file, { upsert:false, contentType:file.type || 'image/jpeg' });
+    const up = await sb.storage.from(BUCKET).upload(path, foto, { upsert:false, contentType:foto.type || 'image/jpeg' });
     if (up.error) throw up.error;
     const { error } = await sb.from('progress_photos').insert({ user_id:uid(), fecha, pose, path });
     if (error) throw error;
