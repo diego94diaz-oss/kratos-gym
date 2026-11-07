@@ -1,5 +1,5 @@
 // Service worker — red primero para el código propio, caché para abrir sin señal.
-const CACHE = "kratos-gym-fotos-20261104";
+const CACHE = "kratos-gym-iconos-20261107";
 const ASSETS = [
   './', './index.html', './css/styles.css',
   './js/config.js', './js/db.js', './js/offline.js', './js/push.js', './js/library.js', './js/foods.js', './js/seed.js',

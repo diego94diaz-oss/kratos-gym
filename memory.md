@@ -30,3 +30,5 @@
 
 - **2026-11-07 — `send-reminders` protegida:** solo responde al cron (encabezado `x-cron-secret`, secret compartido
   `ECOSISTEMA_CRON_SECRET`). Redesplegada y cron `kratos-reminders` reprogramado con la clave. Ver CLAUDE.md regla 7.
+
+- **2026-11-07 — Ícono nuevo:** Naranja, pesa rusa, con una misma línea visual que el resto del ecosistema y color propio (ver `Desktop\Claude\iconos\README.md`). Se regenera con `python iconos/generar_iconos.py` desde la raíz; no editar los PNG a mano.

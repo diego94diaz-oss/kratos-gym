@@ -79,3 +79,4 @@ PWA personal de entrenamiento, nutrición y recuperación, pensada para el celul
 
 Antes de subir, `DB.uploadPhoto` reduce la foto con `comprimirFoto()` (máx. 1600 px, JPEG 0.82, sin metadatos). No quitar ese paso: las fotos de cámara pesan 4–8 MB y el Storage gratis de Supabase (1 GB) es compartido con todo el ecosistema. Originales anteriores respaldados en `C:\Users\PC\Pictures\Progreso Entrenamiento (originales)`.
 
+- **2026-11-07 — Ícono nuevo:** Naranja, pesa rusa, con una misma línea visual que el resto del ecosistema y color propio (ver `Desktop\Claude\iconos\README.md`). Se regenera con `python iconos/generar_iconos.py` desde la raíz; no editar los PNG a mano. Caché del SW: `kratos-gym-iconos-20261107`.

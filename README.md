@@ -43,7 +43,7 @@ Si completas **todas** las series en el tope del rango de reps con RIR adecuado 
 
 
 ### 2026-10-01 — Nombres y logos del ecosistema
-Identidad actual: Mis Apps, Finanzas, Inversiones, Entrenamiento y Salud. Se integraron los PNG proporcionados por el usuario en encabezados/login, favicons, iconos PWA y accesos de Windows. Original conservado como `brand-source.png` junto a los iconos. Se conservan URLs e identificadores internos para mantener instalaciones, datos y sesiones. Caché del shell renovada.
+Identidad actual (2026-11-07): íconos vectoriales con una misma línea visual (cuadrado redondeado, degradado del tono de la app, glifo blanco con sombra) y un color distinto por app: Mis Apps violeta, Inversiones azul, Viajes turquesa, Finanzas verde, Calculadora ámbar, Entrenamiento naranja y Salud rosa. Se generan con `iconos/generar_iconos.py` en la raíz del ecosistema (`Desktop\Claude\iconos\`, ver su README): no editar los PNG a mano. El logo 3D anterior queda en el historial de git. Se conservan URLs e identificadores internos para mantener instalaciones, datos y sesiones.
 
 ### 2026-10-31 — Renovación integral
 Nuevo diseño para celular, sesiones libres, nutrición diaria completa, indicadores con evidencia, conexión con Mi Salud y avisos que se actualizan. Requiere `db/fase4-renovacion.sql` para guardar micronutrientes y notas de sesión.
