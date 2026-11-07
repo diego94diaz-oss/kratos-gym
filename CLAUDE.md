@@ -4,7 +4,7 @@
 > **Al iniciar sesión, leer también [memory.md](memory.md)** (estado y pendientes de esta app).
 > Reglas globales y mapa del ecosistema: `../CLAUDE.md` y `../memory.md`.
 
-> ⚠️ **Este repo es público y GitHub Pages sirve sus archivos.** Lo que se escriba aquí, incluidos este archivo y `memory.md`, queda en internet si se sube. No registrar secretos, datos de salud ni datos personales.
+> ⚠️ **Este repo (`kratos-gym`) sigue siendo público** y GitHub Pages sirve sus archivos (la app principal ya está en Cloudflare desde 2026-11-07; pasar a repo privado espera la aprobación de Diego). Lo que se escriba aquí, incluidos este archivo y `memory.md`, queda en internet si se sube. No registrar secretos, datos de salud ni datos personales.
 
 ## Qué es
 
@@ -12,8 +12,8 @@ PWA personal de entrenamiento, nutrición y recuperación, pensada para el celul
 
 **Nombres:** el usuario ve **Entrenamiento** desde 2026-10-01. Por dentro sigue siendo **Kratos / Kratos Gym** a propósito (repo, URL, `KRATOS_CONFIG`, claves de `localStorage`, función `kratos-ai`). No renombrar esos identificadores: se romperían instalaciones, sesiones y la cola offline.
 
-- **Producción:** https://diego94diaz-oss.github.io/kratos-gym/
-- **Repo:** `diego94diaz-oss/kratos-gym`
+- **Producción:** https://entrenamiento.diego94diaz.workers.dev/ (Cloudflare Workers, Worker `entrenamiento`, desde 2026-11-07). La dirección antigua `diego94diaz-oss.github.io/kratos-gym/` sigue funcionando hasta que Diego decida.
+- **Repo:** `diego94diaz-oss/kratos-gym` (público).
 
 ## Stack
 
@@ -70,7 +70,7 @@ PWA personal de entrenamiento, nutrición y recuperación, pensada para el celul
 
 ## Despliegue y verificación
 
-- **App:** GitHub Pages publica `main` al subirlo; no hay paso de build.
+- **App:** desde esta carpeta, `npx wrangler deploy` (sin build; `.assetsignore` excluye docs, `db/`, `supabase/`, `tests/`). Si se conecta el repo en Cloudflare (Workers Builds), cada push a `main` publica solo. Encabezados de seguridad en `_headers` (CSP; cámara solo para la propia app). Librerías con versión fija en `vendor/` (supabase-js 2.45.4, Chart.js 4.4.1).
 - **Edge Functions:** `npx --yes supabase@latest functions deploy <función> --project-ref ivzzgeoeygggaoazcoeq`.
 - **SQL:** ejecutar la migración en el SQL Editor de Supabase. Comprobar RLS en cada tabla nueva.
 - **Pruebas:** `node --test tests/logic.test.mjs`. Para la interfaz, probar a 360-412 px con un servidor estático (el SW no funciona con `file://`), revisar la consola y, si se tocó lo offline, registrar sin red y ver que se sincroniza.

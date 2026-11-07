@@ -20,6 +20,18 @@ const DB = (() => {
     return true;
   }
 
+  // Salto con sesión desde otra app del ecosistema (desde 2026-11-07): #sso=<código de un solo uso> de la
+  // función portafolio-sso → sesión PROPIA de esta app; el código se borra de la URL.
+  async function canjearSSO() {
+    const m = location.hash.match(/^#sso=([^&]+)/);
+    if (!m || !sb) return;
+    history.replaceState(null, "", location.pathname + location.search);
+    const token_hash = decodeURIComponent(m[1]);
+    let { error } = await sb.auth.verifyOtp({ token_hash, type: "magiclink" });
+    if (error) ({ error } = await sb.auth.verifyOtp({ token_hash, type: "email" }));
+    if (error) console.warn("No se pudo entrar con el salto de sesión:", error.message);
+  }
+
   // Una consulta fallida lanza error: así un corte de red no se confunde con «sin datos»
   const rows = ({ data, error }) => { if (error) throw error; return data || []; };
 
@@ -358,7 +370,7 @@ const DB = (() => {
   async function deleteMesocycle(id){ await sb.from('mesocycles').delete().eq('id', id).eq('user_id', uid()); }
 
   return {
-    configured, init, currentUser, signIn, signUp, signOut, onAuth, uid,
+    configured, init, canjearSSO, currentUser, signIn, signUp, signOut, onAuth, uid,
     getProfile, saveProfile,
     getExercises, addExercise, updateExercise, deleteExercise, bulkInsertExercises,
     addSets, getSets, getAllSets, deleteSetsByIds, saveWorkoutSession, getWorkoutSessions,

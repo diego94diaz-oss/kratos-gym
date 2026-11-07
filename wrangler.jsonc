@@ -1,0 +1,7 @@
+{
+  // Entrenamiento (Kratos Gym) en Cloudflare Workers (assets estáticos). Desde 2026-11-07; antes GitHub Pages
+  // (diego94diaz-oss.github.io/kratos-gym). Publicar a mano desde esta carpeta: `npx wrangler deploy`.
+  "name": "entrenamiento",
+  "compatibility_date": "2026-11-01",
+  "assets": { "directory": "." }
+}

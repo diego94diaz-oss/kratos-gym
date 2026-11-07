@@ -7,7 +7,7 @@ App personal de entrenamiento de Diego. Registra rutinas, series, reps, peso y R
 - 🔁 Export/Import CSV en el esquema exacto de Kratos (`entrenamientos.csv`, `peso_corporal.csv`)
 
 ## Stack
-HTML/CSS/JS vanilla (sin build) · Chart.js · Supabase compartido del ecosistema · GitHub Pages. Peso, cintura, sueño y agua viven en Mi Salud. Detalle en `CLAUDE.md`.
+HTML/CSS/JS vanilla (sin build) · Chart.js · Supabase compartido del ecosistema · Cloudflare Workers (https://entrenamiento.diego94diaz.workers.dev/). Peso, cintura, sueño y agua viven en Mi Salud. Detalle en `CLAUDE.md`.
 
 Pruebas: `node --test tests/logic.test.mjs`.
 
@@ -28,7 +28,7 @@ window.KRATOS_CONFIG = {
 ```
 
 ### 3. Desplegar
-GitHub Pages: **Settings → Pages → Branch: `main` / root**. La app queda en `https://<usuario>.github.io/kratos-gym/`.
+Cloudflare Workers: `npx wrangler deploy` desde la carpeta (ver `wrangler.jsonc`). Antes de 2026-11-07 se publicaba en GitHub Pages.
 
 ### 4. Primer uso
 Abre la URL → **Crear cuenta** (tu email) → la app precarga tu rutina A/B y perfil. ¡A entrenar!

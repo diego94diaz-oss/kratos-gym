@@ -34,3 +34,8 @@
 - **2026-11-07 — Ícono nuevo:** Naranja, pesa rusa, con una misma línea visual que el resto del ecosistema y color propio (ver `Desktop\Claude\iconos\README.md`). Se regenera con `python iconos/generar_iconos.py` desde la raíz; no editar los PNG a mano.
 
 - **2026-11-07 — respaldo semanal (desde 2026-11-07): `Desktop\Claude\respaldo-supabase.py` copia al PC todas las tablas con columna `user_id` (y `tm_sharing`). **Una tabla personal nueva entra sola si tiene `user_id`**; si no lo tiene, agregarla a `TABLAS_EXTRA` del script. Detalle en `memory.md` de la raíz («Respaldo de datos»). El bucket `progress-photos` también se copia.
+
+- **2026-11-07 — Mudanza a Cloudflare:** https://entrenamiento.diego94diaz.workers.dev/ , `_headers` con CSP, librerías en `vendor/`, salto con sesión
+  desde Mis Apps (`DB.canjearSSO`). Repo y dirección antigua (GitHub Pages) siguen activos hasta que Diego apruebe el repo privado.
+  **Falta (Diego):** abrir la app nueva, iniciar sesión, reinstalarla y volver a activar los recordatorios (la suscripción
+  push queda atada a la dirección donde se activó).

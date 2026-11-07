@@ -1,5 +1,5 @@
 // Service worker — red primero para el código propio, caché para abrir sin señal.
-const CACHE = "kratos-gym-iconos-20261107";
+const CACHE = "kratos-gym-vendor-20261107";
 const ASSETS = [
   './', './index.html', './css/styles.css',
   './js/config.js', './js/db.js', './js/offline.js', './js/push.js', './js/library.js', './js/foods.js', './js/seed.js',
@@ -7,11 +7,9 @@ const ASSETS = [
   './js/views/hoy.js', './js/views/entreno.js', './js/views/nutricion.js', './js/views/cuerpo.js', './js/views/salud.js', './js/views/ajustes.js',
   './manifest.json', './assets/icon.svg', './assets/icon-192.png', './assets/icon-512.png'
 ];
-// Sin estas librerías la app no arranca: deben quedar guardadas desde la instalación.
-const LIBS = [
-  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js',
-  'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js'
-];
+// Sin estas librerías la app no arranca: desde 2026-11-07 se sirven desde la propia app (vendor/),
+// con versión fija, en lugar de un CDN externo.
+const LIBS = ['./vendor/supabase-2.45.4.min.js', './vendor/chart-4.4.1.umd.min.js'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(async c => {
     await c.addAll(ASSETS);

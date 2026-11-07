@@ -324,6 +324,7 @@ const App = (() => {
 
     if (!DB.configured()){ show('config-view'); return; }
     DB.init(); initAuthUI();
+    await DB.canjearSSO();
     const u = await DB.currentUser();
     if (u) await startApp(u.email); else show('auth-view');
   }

@@ -1,0 +1,14 @@
+.git
+.gitignore
+.assetsignore
+.wrangler
+wrangler.jsonc
+CLAUDE.md
+README.md
+memory.md
+schema.sql
+db
+docs
+supabase
+tests
+assets/brand-source.png
