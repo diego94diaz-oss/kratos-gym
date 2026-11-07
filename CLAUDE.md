@@ -55,7 +55,7 @@ PWA personal de entrenamiento, nutrición y recuperación, pensada para el celul
 
 ## Reglas críticas
 
-1. **Service worker:** al cambiar el shell, cambiar `CACHE` en `sw.js`. Hoy es `kratos-gym-renovacion-20261031`. Todo archivo nuevo necesario sin conexión debe ir en `ASSETS`; las librerías de CDN van con versión fija en `index.html` y en `LIBS`.
+1. **Service worker:** al cambiar el shell, cambiar `CACHE` en `sw.js`. Hoy es `kratos-gym-fotos-20261104`. Todo archivo nuevo necesario sin conexión debe ir en `ASSETS`; las librerías de CDN van con versión fija en `index.html` y en `LIBS`.
 2. **Offline:** registrar en el gimnasio sin señal es un caso de uso real. La cola cubre `sets`, `weight`, `measure`, `food`, `medicion` y `cardio`; un `kind` nuevo debe agregarse en `Offline.flush`. La sesión en curso vive en `kratos-draft` y se guarda en cada cambio. No cambiar el formato de las colas sin migrar lo pendiente en cada dispositivo.
 3. **Supabase compartido:** un cambio de esquema, RLS o auth afecta a varias apps (`../CLAUDE.md` §12, §14 y §15). Nunca migraciones destructivas sin backup.
 4. **Contrato con Mi Día:** lee `workout_sets` y `exercises` (`dia`, `activo`, `orden`) y porta `Logic.nextDay()` y el 1RM de Epley. `rutina` y `dia` son texto libre: cualquier nombre de rutina, y `Libre` para sesiones que no mueven la rotación. Antes de cambiar esas columnas o esa lógica, revisar `../Mis Apps/DATA-SOURCES.md` (Fuente 3).
