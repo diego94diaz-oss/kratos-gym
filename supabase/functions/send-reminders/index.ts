@@ -2,7 +2,9 @@
 //  Edge Function: send-reminders
 //  Envía recordatorios Web Push según profile.reminders.
 //  Pensada para ejecutarse periódicamente (cada 30 min) vía cron.
-//  Secrets requeridos: VAPID_PUBLIC, VAPID_PRIVATE, VAPID_SUBJECT, SERVICE_ROLE_KEY
+//  Secrets requeridos: VAPID_PUBLIC, VAPID_PRIVATE, VAPID_SUBJECT, SERVICE_ROLE_KEY,
+//  ECOSISTEMA_CRON_SECRET (desde 2026-11-07: solo el cron, que la manda en el encabezado
+//  x-cron-secret, puede dispararla; antes cualquiera con la URL podía mandar avisos).
 // ============================================================
 import webpush from 'npm:web-push@3.6.7';
 import { createClient } from 'npm:@supabase/supabase-js@2';
@@ -12,6 +14,7 @@ const SERVICE_KEY  = Deno.env.get('SERVICE_ROLE_KEY')!;
 const VAPID_PUBLIC = Deno.env.get('VAPID_PUBLIC')!;
 const VAPID_PRIVATE = Deno.env.get('VAPID_PRIVATE')!;
 const VAPID_SUBJECT = Deno.env.get('VAPID_SUBJECT') || 'mailto:diego94diaz@gmail.com';
+const CRON_SECRET = Deno.env.get('ECOSISTEMA_CRON_SECRET') ?? '';
 
 webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
 const sb = createClient(SUPABASE_URL, SERVICE_KEY);
@@ -56,7 +59,10 @@ async function stillNeeded(kind: string, user: string, fecha: string) {
   return true;
 }
 
-Deno.serve(async () => {
+Deno.serve(async (req) => {
+  if (!CRON_SECRET || req.headers.get('x-cron-secret') !== CRON_SECRET) {
+    return new Response(JSON.stringify({ error: 'no autorizado' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+  }
   const now = nowMinutesSantiago();
   const { data: profiles } = await sb.from('profile').select('user_id, reminders').not('reminders', 'is', null);
   let sent = 0;

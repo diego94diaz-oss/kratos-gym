@@ -42,7 +42,8 @@ create extension if not exists pg_net;
 select cron.schedule('kratos-reminders', '*/30 * * * *', $$
   select net.http_post(
     url := 'https://ivzzgeoeygggaoazcoeq.functions.supabase.co/send-reminders',
-    headers := '{"Content-Type":"application/json"}'::jsonb
+    headers := jsonb_build_object('Content-Type','application/json',
+      'x-cron-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'ecosistema_cron_secret'))
   );
 $$);
 ```
@@ -52,3 +53,8 @@ $$);
 - La función compara la hora configurada con la hora actual en `America/Santiago`, ventana de 30 min → ejecútala cada 30 min.
 - Suscripciones caducadas (410/404) se borran solas.
 - Desde 2026-10-31 solo avisa lo pendiente: lee `workout_sets`, `cardio_sessions`, `food_logs` y `salud_mediciones`. Tras cambiar la función hay que volver a desplegarla.
+
+## Clave del cron (2026-11-07)
+`send-reminders` rechaza (401) toda llamada sin `x-cron-secret`. El valor vive en Vault (`ecosistema_cron_secret`) y como
+secret de Edge Functions (`ECOSISTEMA_CRON_SECRET`); los crea `asegurar_cron_secret()` de Inversiones (`app/publish.py`).
+Antes cualquiera con la URL (visible en este repo público) podía dispararla.

@@ -28,3 +28,5 @@
 - **Ecosistema:** `docs/ROADMAP-PLATAFORMA-INTEGRAL.md` propone sueño, PA, medicación e hidratación, que se solapan con Mi Salud. Antes de ampliar esos módulos, definir la fuente de verdad (`../CLAUDE.md` §7).
 - **Fotos de progreso comprimidas (2026-11-04):** las 36 fotos ocupaban 202 MB (4–8 MB c/u, resolución completa de cámara) de 1 GB de Storage gratis. Se respaldaron los originales en `C:\Users\PC\Pictures\Progreso Entrenamiento (originales)` y se reemplazaron en el bucket `progress-photos` (misma ruta) por versiones de máx. 1600 px, JPEG 82 y **sin EXIF/GPS** → 6,7 MB. `DB.uploadPhoto` ahora comprime en el dispositivo con `comprimirFoto()` (canvas, máx. 1600 px, calidad 0.82; si falla sube el original). SW `kratos-gym-fotos-20261104`.
 
+- **2026-11-07 — `send-reminders` protegida:** solo responde al cron (encabezado `x-cron-secret`, secret compartido
+  `ECOSISTEMA_CRON_SECRET`). Redesplegada y cron `kratos-reminders` reprogramado con la clave. Ver CLAUDE.md regla 7.
