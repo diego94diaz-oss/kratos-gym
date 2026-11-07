@@ -32,3 +32,5 @@
   `ECOSISTEMA_CRON_SECRET`). Redesplegada y cron `kratos-reminders` reprogramado con la clave. Ver CLAUDE.md regla 7.
 
 - **2026-11-07 — Ícono nuevo:** Naranja, pesa rusa, con una misma línea visual que el resto del ecosistema y color propio (ver `Desktop\Claude\iconos\README.md`). Se regenera con `python iconos/generar_iconos.py` desde la raíz; no editar los PNG a mano.
+
+- **2026-11-07 — respaldo semanal (desde 2026-11-07): `Desktop\Claude\respaldo-supabase.py` copia al PC todas las tablas con columna `user_id` (y `tm_sharing`). **Una tabla personal nueva entra sola si tiene `user_id`**; si no lo tiene, agregarla a `TABLAS_EXTRA` del script. Detalle en `memory.md` de la raíz («Respaldo de datos»). El bucket `progress-photos` también se copia.
